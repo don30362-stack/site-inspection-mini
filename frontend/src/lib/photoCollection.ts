@@ -94,5 +94,14 @@ export function usePhotoCollection(prepare = preparePhoto, urls = URL) {
     photoError.value = ''
   }
 
-  return { items, photoError, processingPhoto, addPhotos, replacePhoto, removePhoto, clearPhotos }
+  // Move the existing object: no decoding, File copying or preview URL changes.
+  function movePhoto(key: number, to: number) {
+    if (processingPhoto.value || !Number.isInteger(to) || to < 0 || to >= items.length) return false
+    const from = items.findIndex((item) => item.key === key)
+    if (from < 0 || from === to) return false
+    items.splice(to, 0, items.splice(from, 1)[0]!)
+    return true
+  }
+
+  return { items, photoError, processingPhoto, addPhotos, replacePhoto, removePhoto, clearPhotos, movePhoto }
 }

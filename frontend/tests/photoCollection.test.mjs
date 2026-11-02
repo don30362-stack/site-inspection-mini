@@ -108,3 +108,58 @@ test('clearing during conversion prevents late previews and releases every exist
   assert.equal(photos.items.length, 0)
   assert.deepEqual(photos.revoked, ['blob:1'])
 })
+
+test('cross-row reorder preserves objects, files, URLs, conversion and errors without decoding again', async () => {
+  let calls = 0
+  const photos = setup(async (source) => {
+    calls++
+    return { file: source, converted: source.name.endsWith('.heic') }
+  })
+  await photos.addPhotos([1, 2, 3, 4, 5].map((n) => file(`${n}.heic`)))
+  photos.items[4].error = '保留的欄位錯誤'
+  const original = [...photos.items]
+  const snapshots = original.map((item) => ({ ...item }))
+  assert.equal(photos.movePhoto(original[4].key, 0), true)
+  assert.deepEqual(photos.items.map((item) => item.key), [4, 0, 1, 2, 3])
+  assert.equal(photos.movePhoto(photos.items[1].key, 4), true)
+  assert.deepEqual(photos.items.map((item) => item.key), [4, 1, 2, 3, 0])
+  for (const item of photos.items) {
+    assert.equal(item, original[item.key])
+    assert.deepEqual({ ...item }, snapshots[item.key])
+    assert.equal(item.file, snapshots[item.key].file)
+  }
+  assert.equal(calls, 5)
+  assert.deepEqual(photos.revoked, [])
+  // The form appends in items order; verify actual multipart File contents/order.
+  const body = new FormData()
+  for (const item of photos.items) body.append('photos[]', item.file)
+  assert.deepEqual(body.getAll('photos[]').map((entry) => entry.name), ['5.heic', '2.heic', '3.heic', '4.heic', '1.heic'])
+  await photos.replacePhoto(photos.items[1].key, file('replacement.jpg'))
+  assert.equal(photos.items[1].file.name, 'replacement.jpg')
+  photos.removePhoto(photos.items[2].key)
+  await photos.addPhotos([file('new.jpg')])
+  assert.deepEqual(photos.items.map((item) => item.file.name), ['5.heic', 'replacement.jpg', '4.heic', '1.heic', 'new.jpg'])
+  assert.deepEqual(photos.revoked, ['blob:2', 'blob:3'])
+  assert.equal(photos.movePhoto(photos.items[4].key, 0), true)
+  photos.clearPhotos()
+  assert.equal(new Set(photos.revoked).size, 7)
+  assert.equal(photos.revoked.length, 7)
+})
+
+test('invalid, unchanged and processing reorder attempts leave the array untouched', async () => {
+  let finish
+  const photos = setup(async (source) => {
+    if (source.name === 'pending.heic') await new Promise((resolve) => { finish = resolve })
+    return { file: source, converted: false }
+  })
+  await photos.addPhotos([file('a.jpg'), file('b.jpg')])
+  const original = [...photos.items]
+  for (const [key, to] of [[0, 0], [0, -1], [0, 2], [0, 0.5], [99, 0]]) assert.equal(photos.movePhoto(key, to), false)
+  assert.deepEqual([...photos.items], original)
+  const task = photos.replacePhoto(0, file('pending.heic'))
+  assert.equal(photos.movePhoto(1, 0), false)
+  assert.deepEqual(photos.items.map((item) => item.key), [0, 1])
+  finish()
+  await task
+  assert.equal(photos.movePhoto(1, 0), true)
+})

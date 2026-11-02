@@ -326,6 +326,36 @@
 - **仍未驗證的限制：**真實手機的大容量照片、低記憶體、弱網／斷線等極端情境；Android 實機、HDR／色彩的專項檢查亦未有驗收結果。不將一般 iPhone 操作通過或桌面合成 100 MiB 上傳，擴大為上述情境皆已驗證。
 - 原生選檔取消已由使用者在 iPhone 實際驗收通過；既有 FileChooser 工具本身仍無法自動關閉原生選檔視窗。無檔案取消與 URL 清理有單元測試，但沒有以記憶體分析器宣稱已完成手機瀏覽器的實際 URL／記憶體驗收。
 
+## 功能補強：照片放大與拖曳排序
+
+**完成日期：**2026-11-02（Asia/Taipei）。實作與桌面瀏覽器／真實 API 驗證完成；本次新操作的 iPhone／Android 實機驗收待使用者進行。未修改 README、後端 API、Resource、資料庫結構或 Migration；未 Commit／Push。
+
+### 實作與檔案
+- `frontend/src/components/ReportGallery.vue`：沿用既有大圖、縮圖、順序及錯誤狀態，新增原生 dialog 燈箱。大圖載入成功後才可點擊開啟，深色全畫面、完整 contain 顯示、張數、關閉、多張上一張／下一張；單張隱藏切換控制。提供適合畫面／2 倍切換、滑鼠拖曳與原生捲動平移，瀏覽器限制捲動範圍，工具列不隨圖片移動。
+- 燈箱支援 Escape、左右方向鍵、正反向 Tab 焦點循環；開啟聚焦關閉按鈕，背景捲動鎖定，關閉恢復原 overflow 與焦點，元件卸載清理 dialog。實測發現原生 dialog 的 Tab 可離開燈箱，已補明確循環並重測通過。失敗圖片無放大入口；燈箱切換遇到失敗仍保留錯誤、切換及關閉控制。
+- `frontend/src/views/NewReportView.vue`：維持兩欄正方形網格，增加獨立 44px Grip 手柄、位置編號、拖曳目標外框及位置提示；新增格永遠在最後且不參與排序。手柄使用 Pointer Events 與 pointer capture，只有手柄 touch-action:none，靠近視窗上下邊緣時自動捲動，放開至有效照片格才重排；拖出照片區、pointercancel／失去 capture／Escape 不提交重排。照片點擊更換、右上角刪除保持獨立。
+- 手柄支援左右鍵一格、上下鍵一列的鍵盤替代，移動後保留焦點並以 live status 告知位置。照片處理／上傳時停用排序，拖曳中亦阻止表單送出；離開頁面停止拖曳的 animation frame。
+- `frontend/src/lib/photoCollection.ts`：新增 `movePhoto(key, to)`，直接移動既有 reactive item；處理中、非法位置與未改變位置時不操作。保留穩定 key、File、Blob URL、converted、error，不呼叫 preparePhoto、不重新轉 HEIC、不建立或 revoke URL。既有 FormData 仍依 items 陣列順序加入 photos[]。
+- `frontend/tests/photoCollection.test.mjs`：新增跨列重排、物件／File／URL／轉換／錯誤狀態不變、解碼呼叫次數不增加、FormData 順序、排序後更換／刪除／新增及 URL 最終清理、非法／原位／處理中拒絕重排測試。
+- **沒有新增依賴。** 照片最多五張，使用小範圍 Pointer Events 手柄及原生 dialog 即可完成，沒有引入 HTML5 draggable 或大型拖曳／UI 框架；package.json 與 lockfile 不變。手機觸控設計不等同實機驗收已通過。
+
+### 自動化與實際瀏覽器結果
+- 前端 `npm test`：**27 項全數通過**（原 25 項 + 2 項照片重排測試）；`npm run type-check`、`npm run build`、`git diff --check` 通過。既有 HEIC 約 3.23 MB 動態 chunk 警告保留。Laravel `php artisan test`：**72 tests / 473 assertions 通過**，SQLite :memory: 與測試 Storage；包含既有驗證、篩選、交易失敗清理回歸。
+- 實際瀏覽器使用本次獨立 SQLite／Storage 與原本 Laravel 程式，loopback API 18090、Vite 15183；測試 wrapper 僅覆寫該程序的 DB／Storage／APP_URL，未操作原 database.sqlite 或 public Storage。
+- 真實選取 JPEG／PNG／GIF／WebP／官方 HEIC 五張；HEIC 自動轉 JPEG 成功。桌機滑鼠把 [1,2,3,4,5] 跨列拖成 **[5,1,2,3,4]**，再把第二張拖到最後成 **[5,2,3,4,1]**；重排前後原 Blob URL 相同，沒有誤開更換選檔或刪除照片。
+- 390×844 手機寬度下以桌面滑鼠跨列拖曳成功；鍵盤 ArrowDown 移動一列，焦點跟隨原照片。排序後指定更換、刪除及新增正確；拖出照片格或原位置放開皆保持原順序。此為桌面瀏覽器操作，不宣稱是 iPhone 觸控測試。
+- 從實際表單送出五張，最終為 **HEIC 轉 JPEG／GIF／JPEG／WebP／PNG**。核對 SQLite／實體檔／API，images[].sort_order 為 **0、1、2、3、4**，ID、相對路徑及 image_url 一致；未轉檔的四張與對應測試圖 SHA-256 相同，HEIC 產物為真實 **1280×854 JPEG**。五個照片 URL 皆 200，詳細頁縮圖與大圖順序一致。
+- 另以獨立 DB 短暫交易鎖延後實際 POST，確認送出中五個 Grip 與送出按鈕全部 disabled，完成後只建立一筆。處理中不重排另由照片集合單元測試及共用 busy 控制驗證。
+- 單張燈箱開啟、2 倍／還原、關閉成功且無上一張／下一張。五張的按鈕、方向鍵與張數正確；放大後實際拖曳使 scrollLeft／scrollTop 改變；切換重設倍率。正向 Tab 由最後按鈕回第一個控制，Shift+Tab 反向循環；Escape 關閉後焦點回原放大按鈕，overflow 復原。
+- 測試 wrapper 將照片回應延遲 1.2 秒，確認 Loading 時放大按鈕 disabled、無開啟 dialog。僅改名本次測試照片，驗證失敗圖片沒有放大入口；燈箱內遇到照片失敗仍可切下一張或關閉，隨即還原檔案。燈箱開啟時用瀏覽器返回離開頁面，dialog 與 body 捲動鎖定均清除。
+- 燈箱於 **390×844、1280×900、320×568、768×1024** 無水平溢出，照片 contain，關閉按鈕始終在畫面內、至少 44px。回歸列表三條件 AND 篩選、清除、API 紀錄 404、全站 404 均正常。瀏覽器收集的 Console error／warn 為空，隔離 Laravel log 無未解釋例外。
+- 合計建立 **3 筆／11 張**隔離資料，結束後已停止本次 API／Vite 程序、清理其 DB 與 Storage，恢復 viewport。原本 **13 個照片檔案雜湊均未變**，原 SQLite 大小及修改時間未變。截圖及核對 JSON 保留於 Git 忽略的 `backend/storage/framework/testing/photo-tools-20261102/`，包含 sort-mobile.png、lightbox-mobile.png、lightbox-desktop.png、order-db.json、order-http.json。
+
+### 待實機驗證與限制
+- 等待使用者以 **iPhone Safari／Android** 驗證新手柄的觸控跨列拖曳、靠邊自動捲動、取消手勢、拖曳與更換／刪除的區隔，以及燈箱 2 倍放大後的觸控滑動、關閉與橫向畫面。
+- 本次提供按鈕 2 倍切換與平移，**未實作或宣稱雙指縮放已通過**。大容量、低記憶體與弱網極端情境仍是原有限制。
+- 前次使用者回報的 iPhone 相機／相簿／HEIC 與核心流程驗收結果保留，但不擴大為本次新增拖曳與燈箱操作已實機驗證。
+
 ## 下一步
 
-階段 5 已完成，由使用者決定提交；大容量、低記憶體與弱網等極端情境保留為後續驗證限制。未自行 Commit／Push。
+由使用者完成本次照片拖曳與燈箱的真實手機驗收，再依指示統一整理交件文件。階段 5 原核心驗收已完成；未自行 Commit／Push。

@@ -13,7 +13,7 @@ type ApiResult = ApiResponse<Pick<Report, 'id'> | null>
 
 const form = reactive({ site_name: '', issue_type: '', severity: '', description: '' })
 const errors = ref<FieldErrors>({})
-const { items: photos, photoError, processingPhoto, addPhotos, replacePhoto, removePhoto, clearPhotos } = usePhotoCollection()
+const { items: photos, photoError, processingPhoto, addPhotos, replacePhoto, removePhoto, clearPhotos, movePhoto } = usePhotoCollection()
 const submitting = ref(false)
 const errorMessage = ref('')
 const successId = ref<number | null>(null)
@@ -24,6 +24,63 @@ const busy = computed(() => processingPhoto.value || submitting.value)
 const descriptionCount = computed(() => Array.from(form.description).length)
 let replaceTarget: number | null = null
 let requestController: AbortController | null = null
+const dragging = ref<{ key: number; target: number; pointer: number } | null>(null)
+const sortMessage = ref('')
+let dragFrame = 0
+let dragPoint = { x: 0, y: 0 }
+
+function updateDragTarget() {
+  const cell = document.elementFromPoint(dragPoint.x, dragPoint.y)?.closest<HTMLElement>('[data-photo-position]')
+  if (cell && formElement.value?.contains(cell) && dragging.value) dragging.value.target = Number(cell.dataset.photoPosition)
+}
+
+function scrollWhileDragging() {
+  if (!dragging.value) return
+  const edge = 64
+  const delta = dragPoint.y < edge ? -12 : dragPoint.y > window.innerHeight - edge ? 12 : 0
+  if (delta) window.scrollBy(0, delta)
+  updateDragTarget()
+  dragFrame = requestAnimationFrame(scrollWhileDragging)
+}
+
+function startDrag(event: PointerEvent, key: number, index: number) {
+  if (busy.value || photos.length < 2 || !event.isPrimary || event.button !== 0) return
+  const handle = event.currentTarget as HTMLButtonElement
+  event.preventDefault()
+  handle.focus()
+  handle.setPointerCapture(event.pointerId)
+  dragging.value = { key, target: index, pointer: event.pointerId }
+  dragPoint = { x: event.clientX, y: event.clientY }
+  dragFrame = requestAnimationFrame(scrollWhileDragging)
+}
+
+function dragOver(event: PointerEvent) {
+  if (!dragging.value || dragging.value.pointer !== event.pointerId) return
+  dragPoint = { x: event.clientX, y: event.clientY }
+  updateDragTarget()
+}
+
+function finishDrag(event: PointerEvent, cancelled = false) {
+  const drag = dragging.value
+  if (!drag || drag.pointer !== event.pointerId) return
+  const cell = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-photo-position]')
+  dragging.value = null
+  cancelAnimationFrame(dragFrame)
+  if (!cancelled && !busy.value && cell && formElement.value?.contains(cell) && movePhoto(drag.key, Number(cell.dataset.photoPosition))) {
+    sortMessage.value = `照片已移至第 ${Number(cell.dataset.photoPosition) + 1} 張。`
+  }
+}
+
+async function sortWithKeyboard(event: KeyboardEvent, key: number, index: number) {
+  const offsets: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -2, ArrowDown: 2 }
+  const offset = offsets[event.key]
+  if (offset === undefined) return
+  event.preventDefault()
+  if (busy.value || dragging.value || !movePhoto(key, index + offset)) return
+  sortMessage.value = `照片已移至第 ${index + offset + 1} 張。`
+  await nextTick()
+  formElement.value?.querySelector<HTMLButtonElement>(`[data-sort-key="${key}"]`)?.focus()
+}
 
 function choosePhotos() {
   if (busy.value || !addInput.value) return
@@ -60,7 +117,7 @@ async function focusFirstError() {
 }
 
 async function submitReport() {
-  if (busy.value || successId.value !== null) return
+  if (busy.value || dragging.value || successId.value !== null) return
   errors.value = {}
   errorMessage.value = ''
   for (const photo of photos) photo.error = ''
@@ -130,6 +187,8 @@ function startNextReport() {
 }
 
 onBeforeUnmount(() => {
+  cancelAnimationFrame(dragFrame)
+  dragging.value = null
   clearPhotos()
   requestController?.abort()
 })
@@ -192,12 +251,16 @@ onBeforeUnmount(() => {
               <span class="small text-secondary" aria-live="polite">{{ photos.length }} / 5 張</span>
             </div>
             <div class="photo-grid" role="group" aria-labelledby="photos-label" aria-describedby="photo-hint photo-error" :aria-invalid="!!errors.photos" tabindex="-1">
-              <div v-for="(photo, index) in photos" :key="photo.key" class="photo-cell">
+              <div v-for="(photo, index) in photos" :key="photo.key" class="photo-cell" :data-photo-position="index" :class="{ 'sort-source': dragging?.key === photo.key, 'sort-target': dragging?.target === index }">
                 <div class="photo-tile" :class="{ 'photo-invalid': photo.error }">
                   <button type="button" class="photo-replace" :aria-label="`更換第 ${index + 1} 張照片`" :disabled="busy" :aria-invalid="!!photo.error" :aria-describedby="photo.error ? `photo-error-${photo.key}` : undefined" @click="chooseReplacement(photo.key)">
-                    <img v-if="photo.url" :src="photo.url" :alt="`現場照片 ${index + 1}`" />
+                    <img v-if="photo.url" :src="photo.url" :alt="`現場照片 ${index + 1}`" draggable="false" />
                     <span v-else class="visually-hidden">第 {{ index + 1 }} 張照片</span>
                     <span v-if="photo.status === 'ready'" class="photo-caption">{{ photo.converted ? '已轉為 JPEG · ' : '' }}點擊更換</span>
+                  </button>
+                  <span class="photo-number" aria-hidden="true">{{ index + 1 }}</span>
+                  <button v-if="photos.length > 1" type="button" class="photo-grip" :data-sort-key="photo.key" :aria-label="`排序第 ${index + 1} 張照片`" aria-describedby="sort-hint" :disabled="busy" @pointerdown.stop="startDrag($event, photo.key, index)" @pointermove="dragOver" @pointerup="finishDrag($event)" @pointercancel="finishDrag($event, true)" @lostpointercapture="finishDrag($event, true)" @keydown="sortWithKeyboard($event, photo.key, index)" @keydown.esc.prevent="dragging = null" @click.stop.prevent>
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle v-for="(point, n) in [[7, 5], [13, 5], [7, 10], [13, 10], [7, 15], [13, 15]]" :key="n" :cx="point[0]" :cy="point[1]" r="1.5" /></svg>
                   </button>
                   <div v-if="photo.status !== 'ready'" class="photo-loading" role="status">
                     <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
@@ -215,6 +278,9 @@ onBeforeUnmount(() => {
                 </button>
               </div>
             </div>
+            <p v-if="photos.length > 1" id="sort-hint" class="form-text mb-0">拖曳排序圖示可調整照片順序<span class="d-block small">鍵盤：左右鍵移動一格，上下鍵移動一列。</span></p>
+            <p v-if="dragging" class="small text-primary mt-2 mb-0" role="status">放開可移至第 {{ dragging.target + 1 }} 張；按 Escape 可取消。</p>
+            <span class="visually-hidden" role="status" aria-live="polite">{{ sortMessage }}</span>
             <input ref="addInput" type="file" accept="image/*,.heic,.heif" multiple hidden aria-label="新增現場照片檔案" @change="selectPhotos" />
             <input ref="replaceInput" type="file" accept="image/*,.heic,.heif" hidden aria-label="更換現場照片檔案" @change="selectReplacement" @cancel="replaceTarget = null" />
             <p v-if="errors.photos" id="photo-error" class="small text-danger mt-2 mb-0" role="alert">{{ errors.photos }}</p>
@@ -231,7 +297,7 @@ onBeforeUnmount(() => {
         </fieldset>
 
         <p v-if="processingPhoto" class="text-primary" role="status" aria-live="polite"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>正在處理照片，請稍候…</p>
-        <button type="submit" class="btn btn-primary btn-lg w-100 submit-button" :disabled="busy">
+        <button type="submit" class="btn btn-primary btn-lg w-100 submit-button" :disabled="busy || !!dragging">
           <span v-if="busy" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
           {{ submitting ? '正在送出…' : processingPhoto ? '照片處理中…' : '送出巡檢回報' }}
         </button>
@@ -258,6 +324,12 @@ h1 { font-size: clamp(1.65rem, 5vw, 2rem); color: #192f3a; }
 .photo-replace img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .photo-caption { position: absolute; bottom: 0; left: 0; right: 0; padding: 8px; background: rgb(14 32 40 / 70%); color: white; font-size: .75rem; }
 .photo-delete { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid #dce2e6; border-radius: 50%; color: #9c342d; background: white; box-shadow: 0 2px 8px #0002; }
+.photo-grip { position: absolute; top: 6px; left: 6px; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid #dce2e6; border-radius: 10px; background: white; color: #192f3a; touch-action: none; cursor: grab; user-select: none; }
+.photo-grip:active { cursor: grabbing; }
+.photo-grip:focus-visible { outline: 3px solid #18786e; outline-offset: -4px; }
+.photo-number { position: absolute; right: 8px; bottom: 38px; min-width: 24px; text-align: center; border-radius: 5px; background: #192f3acc; color: white; pointer-events: none; }
+.sort-source .photo-tile { opacity: .65; }
+.sort-target .photo-tile { outline: 4px solid #18786e; outline-offset: -4px; }
 .photo-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 2px dashed #b4c8cc; background: #f6faf9; color: #146b61; font-weight: 600; }
 .photo-plus { font-size: 2rem; line-height: 1.3; font-weight: 400; }
 .photo-loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgb(238 245 245 / 90%); color: #146b61; font-size: .85rem; }
