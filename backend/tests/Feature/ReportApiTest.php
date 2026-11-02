@@ -3,9 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\Report;
+use App\Models\ReportImage;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -28,17 +30,18 @@ class ReportApiTest extends TestCase
         $bytes = file_get_contents(base_path('tests/Fixtures/photo.'.$extension));
         $response = $this->post('/api/reports', [
             ...$this->attributes(),
-            'photo' => UploadedFile::fake()->createWithContent('user-photo.'.$extension, $bytes),
+            'photos' => [UploadedFile::fake()->createWithContent('user-photo.'.$extension, $bytes)],
             'image_path' => 'untrusted/path.jpg',
         ])->assertCreated()->assertJsonPath('message', '巡檢紀錄已建立。');
 
         $report = Report::findOrFail($response->json('data.id'));
         $this->assertDatabaseCount('reports', 1);
         $this->assertDatabaseHas('reports', ['id' => $report->id, ...$this->attributes()]);
-        $this->assertMatchesRegularExpression('/^reports\/[0-9a-f-]{36}\.(jpg|png|gif|webp)$/', $report->image_path);
-        $this->assertSame($bytes, Storage::disk('public')->get($report->image_path));
-        $response->assertJsonPath('data.image_url', Storage::disk('public')->url($report->image_path));
-        $response->assertJsonStructure(['data' => ['id', 'site_name', 'issue_type', 'severity', 'description', 'image_path', 'image_url', 'created_at', 'updated_at'], 'message', 'errors']);
+        $this->assertMatchesRegularExpression('/^reports\/[0-9a-f-]{36}\.(jpg|png|gif|webp)$/', $report->images->first()->image_path);
+        $this->assertSame($bytes, Storage::disk('public')->get($report->images->first()->image_path));
+        $response->assertJsonPath('data.images.0.image_url', Storage::disk('public')->url($report->images->first()->image_path));
+        $response->assertJsonMissingPath('data.image_path')->assertJsonMissingPath('data.image_url');
+        $response->assertJsonStructure(['data' => ['id', 'site_name', 'issue_type', 'severity', 'description', 'images' => [['id', 'image_url', 'sort_order']], 'created_at', 'updated_at'], 'message', 'errors']);
     }
 
     public static function photoFormats(): array
@@ -48,14 +51,14 @@ class ReportApiTest extends TestCase
 
     public function test_lists_newest_first_with_an_id_tie_breaker(): void
     {
-        $old = Report::create([...$this->attributes(), 'image_path' => null]);
+        $old = Report::create($this->attributes());
         $old->forceFill(['created_at' => now()->subDay()])->save();
         $new = Report::create($this->attributes());
         $newer = Report::create($this->attributes());
 
         $response = $this->get('/api/reports')->assertOk();
         $this->assertSame([$newer->id, $new->id, $old->id], array_column($response->json('data'), 'id'));
-        $response->assertJsonPath('data.0.image_url', null);
+        $response->assertJsonPath('data.0.images', []);
     }
 
     #[DataProvider('filters')]
@@ -88,10 +91,11 @@ class ReportApiTest extends TestCase
 
     public function test_shows_one_report_and_returns_json_404_without_accept_header(): void
     {
-        $report = Report::create([...$this->attributes(), 'image_path' => 'reports/example.jpg']);
+        $report = Report::create($this->attributes());
+        $report->images()->create(['image_path' => 'reports/example.jpg', 'sort_order' => 0]);
         $this->get('/api/reports/'.$report->id)->assertOk()
             ->assertJsonPath('data.id', $report->id)
-            ->assertJsonPath('data.image_url', Storage::disk('public')->url($report->image_path));
+            ->assertJsonPath('data.images.0.image_url', Storage::disk('public')->url($report->images->first()->image_path));
         $this->get('/api/reports/999999')->assertNotFound()->assertJsonPath('data', null)
             ->assertJsonStructure(['data', 'message', 'errors']);
         $this->get('/api/reports/not-an-id')->assertNotFound()->assertJsonPath('data', null);
@@ -100,14 +104,14 @@ class ReportApiTest extends TestCase
     public function test_rejects_missing_required_fields_and_photo(): void
     {
         $this->post('/api/reports', [])->assertUnprocessable()
-            ->assertJsonValidationErrors(['site_name', 'issue_type', 'severity', 'description', 'photo'])
+            ->assertJsonValidationErrors(['site_name', 'issue_type', 'severity', 'description', 'photos'])
             ->assertJsonPath('data', null);
         $this->assertNothingPersisted();
     }
 
     public function test_rejects_a_missing_photo_with_other_fields_present(): void
     {
-        $this->post('/api/reports', $this->attributes())->assertUnprocessable()->assertJsonValidationErrors('photo');
+        $this->post('/api/reports', $this->attributes())->assertUnprocessable()->assertJsonValidationErrors('photos');
         $this->assertNothingPersisted();
     }
 
@@ -115,7 +119,7 @@ class ReportApiTest extends TestCase
     public function test_rejects_invalid_fields(string $field, mixed $value): void
     {
         $this->post('/api/reports', [
-            ...$this->attributes(), 'photo' => $this->photo(), $field => $value,
+            ...$this->attributes(), 'photos' => [$this->photo()], $field => $value,
         ])->assertUnprocessable()->assertJsonValidationErrors($field)->assertJsonPath('data', null);
         $this->assertNothingPersisted();
     }
@@ -135,7 +139,7 @@ class ReportApiTest extends TestCase
     {
         $this->post('/api/reports', [
             ...$this->attributes(), 'site_name' => '　'.str_repeat('工', 100).' ',
-            'description' => str_repeat('字', 1000), 'photo' => $this->photo(),
+            'description' => str_repeat('字', 1000), 'photos' => [$this->photo()],
         ])->assertCreated()->assertJsonPath('data.site_name', str_repeat('工', 100));
     }
 
@@ -149,8 +153,8 @@ class ReportApiTest extends TestCase
     public function test_rejects_non_images_disguised_images_and_svg(string $name, string $content): void
     {
         $this->post('/api/reports', [
-            ...$this->attributes(), 'photo' => UploadedFile::fake()->createWithContent($name, $content),
-        ])->assertUnprocessable()->assertJsonValidationErrors('photo');
+            ...$this->attributes(), 'photos' => [UploadedFile::fake()->createWithContent($name, $content)],
+        ])->assertUnprocessable()->assertJsonValidationErrors('photos.0');
         $this->assertNothingPersisted();
     }
 
@@ -168,24 +172,24 @@ class ReportApiTest extends TestCase
     public function test_rejects_an_actual_file_larger_than_twenty_mib(): void
     {
         $this->post('/api/reports', [
-            ...$this->attributes(), 'photo' => $this->paddedPhoto(20 * 1024 * 1024 + 1),
-        ])->assertUnprocessable()->assertJsonValidationErrors('photo');
+            ...$this->attributes(), 'photos' => [$this->paddedPhoto(20 * 1024 * 1024 + 1)],
+        ])->assertUnprocessable()->assertJsonValidationErrors('photos.0');
         $this->assertNothingPersisted();
     }
 
     public function test_accepts_an_actual_file_of_exactly_twenty_mib(): void
     {
         $response = $this->post('/api/reports', [
-            ...$this->attributes(), 'photo' => $this->paddedPhoto(20 * 1024 * 1024),
+            ...$this->attributes(), 'photos' => [$this->paddedPhoto(20 * 1024 * 1024)],
         ])->assertCreated();
-        $this->assertSame(20 * 1024 * 1024, Storage::disk('public')->size($response->json('data.image_path')));
+        $this->assertSame(20 * 1024 * 1024, Storage::disk('public')->size(Report::findOrFail($response->json('data.id'))->images->first()->image_path));
     }
 
     public function test_php_upload_failure_is_a_json_validation_error(): void
     {
         $photo = new UploadedFile(base_path('tests/Fixtures/photo.png'), 'photo.png', null, UPLOAD_ERR_INI_SIZE, true);
-        $this->post('/api/reports', [...$this->attributes(), 'photo' => $photo])
-            ->assertUnprocessable()->assertJsonValidationErrors('photo');
+        $this->post('/api/reports', [...$this->attributes(), 'photos' => [$photo]])
+            ->assertUnprocessable()->assertJsonValidationErrors('photos.0');
         $this->assertNothingPersisted();
     }
 
@@ -193,20 +197,23 @@ class ReportApiTest extends TestCase
     {
         $this->withServerVariables(['CONTENT_LENGTH' => 1024 * 1024 * 1024])
             ->post('/api/reports', $this->attributes())->assertUnprocessable()
-            ->assertJsonValidationErrors('photo')->assertJsonPath('data', null);
+            ->assertJsonValidationErrors('photos')->assertJsonPath('data', null);
         $this->assertNothingPersisted();
     }
 
-    public function test_database_failure_rolls_back_the_insert_and_deletes_the_photo(): void
+    public function test_later_database_failure_rolls_back_all_rows_and_photos(): void
     {
-        Report::created(function () {
-            throw new RuntimeException('Simulated failure after database insert.');
+        $created = 0;
+        ReportImage::created(function () use (&$created) {
+            if (++$created === 3) {
+                throw new RuntimeException('Simulated failure after third image insert.');
+            }
         });
         try {
-            $this->post('/api/reports', [...$this->attributes(), 'photo' => $this->photo()])
+            $this->post('/api/reports', [...$this->attributes(), 'photos' => array_map(fn () => $this->photo(), range(1, 5))])
                 ->assertStatus(500)->assertJsonPath('data', null)->assertJsonMissing(['exception' => RuntimeException::class]);
         } finally {
-            Report::flushEventListeners();
+            ReportImage::flushEventListeners();
         }
         $this->assertNothingPersisted();
     }
@@ -227,7 +234,7 @@ class ReportApiTest extends TestCase
         $failingDisk->shouldReceive('delete')->once()->andReturnUsing(fn ($path) => $disk->delete($path));
         Storage::set('public', $failingDisk);
         try {
-            $this->post('/api/reports', [...$this->attributes(), 'photo' => $this->photo()])
+            $this->post('/api/reports', [...$this->attributes(), 'photos' => [$this->photo()]])
                 ->assertStatus(500)->assertJsonPath('data', null);
         } finally {
             Storage::set('public', $disk);
@@ -238,6 +245,88 @@ class ReportApiTest extends TestCase
     public static function writeFailures(): array
     {
         return ['exception' => [true], 'false return' => [false]];
+    }
+
+    public function test_five_mixed_photos_are_ordered_and_persist_across_reads(): void
+    {
+        $formats = ['jpg', 'png', 'webp', 'gif', 'jpg'];
+        $photos = array_map(fn ($extension) => UploadedFile::fake()->createWithContent('photo.'.$extension, file_get_contents(base_path('tests/Fixtures/photo.'.$extension))), $formats);
+        $response = $this->post('/api/reports', [...$this->attributes(), 'photos' => $photos])
+            ->assertCreated()->assertJsonCount(5, 'data.images');
+        $report = Report::findOrFail($response->json('data.id'));
+        $this->assertDatabaseCount('report_images', 5);
+        $this->assertSame([0, 1, 2, 3, 4], $report->images->pluck('sort_order')->all());
+        foreach ($report->images as $index => $image) {
+            $this->assertSame(file_get_contents(base_path('tests/Fixtures/photo.'.$formats[$index])), Storage::disk('public')->get($image->image_path));
+            $response->assertJsonPath('data.images.'.$index.'.id', $image->id)
+                ->assertJsonPath('data.images.'.$index.'.sort_order', $index)
+                ->assertJsonPath('data.images.'.$index.'.image_url', Storage::disk('public')->url($image->image_path));
+        }
+        $this->get('/api/reports/'.$report->id)->assertOk()->assertJsonPath('data.images', $response->json('data.images'));
+        $this->get('/api/reports')->assertOk()->assertJsonPath('data.0.images', $response->json('data.images'));
+    }
+
+    public function test_zero_six_and_old_photo_field_are_rejected(): void
+    {
+        foreach ([[], array_map(fn () => $this->photo(), range(1, 6))] as $photos) {
+            $this->post('/api/reports', [...$this->attributes(), 'photos' => $photos])
+                ->assertUnprocessable()->assertJsonValidationErrors('photos');
+        }
+        $this->post('/api/reports', [...$this->attributes(), 'photo' => $this->photo()])
+            ->assertUnprocessable()->assertJsonValidationErrors(['photo', 'photos']);
+        $this->assertNothingPersisted();
+    }
+
+    public function test_images_are_eager_loaded_without_n_plus_one_queries(): void
+    {
+        foreach (range(1, 4) as $number) {
+            Report::create($this->attributes())->images()->create(['image_path' => 'reports/'.$number.'.jpg', 'sort_order' => 0]);
+        }
+        DB::enableQueryLog();
+        $this->get('/api/reports')->assertOk()->assertJsonCount(4, 'data');
+        $queries = collect(DB::getQueryLog())->filter(fn ($query) => str_contains($query['query'], 'report_images'));
+        DB::disableQueryLog();
+        $this->assertCount(1, $queries);
+    }
+
+    #[DataProvider('laterWriteFailures')]
+    public function test_later_photo_failure_removes_all_files_and_database_rows(int $failureAt, bool $throw): void
+    {
+        $disk = Storage::disk('public');
+        $failingDisk = Mockery::mock(FilesystemAdapter::class);
+        $writes = 0;
+        $failingDisk->shouldReceive('putFileAs')->times($failureAt)->andReturnUsing(function ($directory, $file, $name) use ($disk, $failureAt, $throw, &$writes) {
+            $path = $disk->putFileAs($directory, $file, $name);
+            if (++$writes === $failureAt) {
+                if ($throw) {
+                    throw new RuntimeException('Simulated later partial write.');
+                }
+
+                return false;
+            }
+
+            return $path;
+        });
+        $failingDisk->shouldReceive('delete')->times($failureAt)->andReturnUsing(fn ($path) => $disk->delete($path));
+        Storage::set('public', $failingDisk);
+        try {
+            $this->post('/api/reports', [...$this->attributes(), 'photos' => array_map(fn () => $this->photo(), range(1, 5))])
+                ->assertStatus(500)->assertJsonPath('data', null);
+        } finally {
+            Storage::set('public', $disk);
+        }
+        $this->assertNothingPersisted();
+    }
+
+    public static function laterWriteFailures(): array
+    {
+        $cases = [];
+        foreach (range(2, 5) as $position) {
+            $cases[] = [$position, true];
+            $cases[] = [$position, false];
+        }
+
+        return $cases;
     }
 
     private function photo(): UploadedFile
@@ -258,6 +347,7 @@ class ReportApiTest extends TestCase
     private function assertNothingPersisted(): void
     {
         $this->assertDatabaseCount('reports', 0);
+        $this->assertDatabaseCount('report_images', 0);
         $this->assertSame([], Storage::disk('public')->allFiles('reports'));
     }
 }

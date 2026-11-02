@@ -30,7 +30,9 @@ class StoreReportRequest extends FormRequest
             'issue_type' => ['required', 'string', Rule::in(Report::ISSUE_TYPES)],
             'severity' => ['required', 'string', Rule::in(Report::SEVERITIES)],
             'description' => ['required', 'string', 'max:1000'],
-            'photo' => [
+            'photo' => ['prohibited'],
+            'photos' => ['required', 'array', 'list', 'min:1', 'max:5'],
+            'photos.*' => [
                 'bail', 'required', 'file', 'max:20480', 'image',
                 'mimetypes:image/jpeg,image/png,image/gif,image/webp',
                 'dimensions:min_width=1,min_height=1',
@@ -41,12 +43,15 @@ class StoreReportRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'photo.required' => '請拍照或選取照片。',
-            'photo.uploaded' => '照片上傳失敗，請確認檔案大小與伺服器上傳限制。',
-            'photo.max' => '照片不得超過 20 MiB。',
-            'photo.image' => '請提供真正的圖片檔案。',
-            'photo.mimetypes' => '目前支援 JPEG、PNG、GIF、WebP；HEIC／HEIF 自動轉換尚未提供。',
-            'photo.dimensions' => '無法辨識圖片內容，請重新選取照片。',
+            'photo.prohibited' => '請改用 photos[] 上傳照片。',
+            'photos.required' => '請至少新增一張現場照片。',
+            'photos.min' => '請至少新增一張現場照片。',
+            'photos.max' => '現場照片最多五張。',
+            'photos.*.uploaded' => '照片上傳失敗，請確認檔案大小與伺服器上傳限制。',
+            'photos.*.max' => '每張照片不得超過 20 MiB。',
+            'photos.*.image' => '請提供真正的圖片檔案。',
+            'photos.*.mimetypes' => '照片須為 JPEG、PNG、GIF 或 WebP；HEIC／HEIF 請由表單自動處理。',
+            'photos.*.dimensions' => '無法辨識圖片內容，請重新選取照片。',
         ];
     }
 }

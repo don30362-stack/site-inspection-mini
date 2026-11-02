@@ -35,7 +35,7 @@ return Application::configure(basePath: dirname(__DIR__))
             } elseif ($exception instanceof PostTooLargeException) {
                 $status = 422;
                 $message = '上傳內容超過伺服器限制。';
-                $errors = ['photo' => ['照片不得超過 20 MiB；伺服器也必須允許此上傳大小。']];
+                $errors = ['photos' => ['最多五張照片，每張不得超過 20 MiB；伺服器也必須允許此上傳大小。']];
             } elseif ($exception instanceof HttpExceptionInterface) {
                 $status = $exception->getStatusCode();
                 $headers = $exception->getHeaders();

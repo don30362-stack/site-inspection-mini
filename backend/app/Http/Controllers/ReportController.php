@@ -17,7 +17,7 @@ class ReportController extends Controller
 {
     public function index(IndexReportRequest $request): JsonResponse
     {
-        $query = Report::query();
+        $query = Report::with('images');
         foreach ($request->validated() as $field => $value) {
             if ($value !== null) {
                 $query->where($field, $value);
@@ -34,26 +34,37 @@ class ReportController extends Controller
     public function store(StoreReportRequest $request): JsonResponse
     {
         $disk = Storage::disk('public');
-        $photo = $request->file('photo');
-        // The extension comes from detected content, never the client filename.
-        $filename = Str::uuid().'.'.$photo->extension();
-        $path = 'reports/'.$filename;
+        $paths = [];
 
         try {
-            $report = DB::transaction(function () use ($request, $disk, $photo, $filename, $path) {
-                if ($disk->putFileAs('reports', $photo, $filename) !== $path) {
-                    throw new RuntimeException('Unable to store report photo.');
+            $report = DB::transaction(function () use ($request, $disk, &$paths) {
+                $report = Report::create($request->safe()->except(['photos', 'photo']));
+                foreach ($request->file('photos') as $index => $photo) {
+                    // Register before writing so partial writes are included in cleanup.
+                    $filename = Str::uuid().'.'.$photo->extension();
+                    $path = 'reports/'.$filename;
+                    $paths[] = $path;
+                    if ($disk->putFileAs('reports', $photo, $filename) !== $path) {
+                        throw new RuntimeException('Unable to store report photo.');
+                    }
+                    $report->images()->create(['image_path' => $path, 'sort_order' => $index]);
                 }
 
-                return Report::create([
-                    ...$request->safe()->except('photo'),
-                    'image_path' => $path,
-                ]);
+                return $report->load('images');
             });
         } catch (Throwable $exception) {
-            // Also remove a partial write; the unique path cannot belong to an older report.
-            if (! $disk->delete($path)) {
-                throw new RuntimeException('Unable to clean up failed report photo.', previous: $exception);
+            // Try every path even if deletion of one path fails.
+            $cleanupFailed = false;
+            foreach ($paths as $path) {
+                try {
+                    $cleanupFailed = ! $disk->delete($path) || $cleanupFailed;
+                } catch (Throwable $cleanupException) {
+                    report($cleanupException);
+                    $cleanupFailed = true;
+                }
+            }
+            if ($cleanupFailed) {
+                throw new RuntimeException('Unable to clean up all failed report photos.', previous: $exception);
             }
 
             throw $exception;
@@ -68,6 +79,8 @@ class ReportController extends Controller
 
     public function show(Report $report): JsonResponse
     {
+        $report->load('images');
+
         return response()->json([
             'data' => new ReportResource($report),
             'message' => '查詢成功。',

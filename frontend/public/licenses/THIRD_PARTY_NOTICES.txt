@@ -1,0 +1,13 @@
+HEIC/HEIF photo conversion uses heic-to 1.6.7, unmodified.
+Author: Hopper Gee
+Package license: LGPL-3.0 (the supplied license permits version 3 or later).
+License text: ./heic-to-LICENSE.txt
+Source and build instructions: https://github.com/hoppergee/heic-to
+Exact package source: https://registry.npmjs.org/heic-to/-/heic-to-1.6.7.tgz
+
+heic-to embeds libheif and libde265 in its browser worker.
+Upstream source: https://github.com/strukturag/libheif
+Upstream source: https://github.com/strukturag/libde265
+
+The decoder is imported dynamically as a separate Vite chunk only for HEIF content.
+No heic-to, libheif, or libde265 source was modified for this project.

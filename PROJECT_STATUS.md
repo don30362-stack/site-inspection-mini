@@ -9,8 +9,8 @@
 | --- | --- | --- |
 | 0 | 環境檢查、前後端初始化 | 已完成（2026-11-02） |
 | 1 | SQLite 資料表、Migration、Model | 已完成（2026-11-02） |
-| 2 | 巡檢 API、圖片上傳與後端驗證 | 核心完成；HEIC／HEIF 待整合（2026-11-02） |
-| 3 | 手機版巡檢回報表單 | 待開始 |
+| 2 | 巡檢 API、圖片上傳與後端驗證 | 核心完成；前端轉換已於階段 3 整合（2026-11-02） |
+| 3 | 手機版巡檢回報表單 | 已完成多照片調整；手機實機待驗證（2026-11-02） |
 | 4 | 桌機列表、篩選、詳細頁 | 待開始 |
 | 5 | 整合測試與錯誤修正 | 待開始 |
 | 6 | README、GitHub 交件整理 | 待開始 |
@@ -100,6 +100,8 @@
 
 **完成日期：**2026-11-02（Asia/Taipei）；核心 API 完成，HEIC／HEIF 自動轉換尚未提供。
 
+以下為階段 2 完成時的紀錄；前端自動轉換的目前結果與限制見階段 3。
+
 ### 已完成
 - 新增 `ReportController`、`StoreReportRequest`、`IndexReportRequest`、`ReportResource`，接上三個 API：POST /api/reports、GET /api/reports、GET /api/reports/{id}。
 - 列表支援 site_name、issue_type、severity 完全相等篩選，多條件以 AND 組合；依 created_at DESC、id DESC 排列，現階段不分頁。
@@ -135,6 +137,87 @@
 - 系統設定及正式部署限制仍需部署時確認；本機應依 README 使用 serve.ps1，避免以原始 2M / 8M 的 artisan serve 測試大照片。
 - 程序被強制終止或儲存裝置連刪除都失敗時，跨檔案系統與 SQLite 無法提供同一個原子交易；一般可捕捉的失敗已有 rollback 與清理測試，清理失敗會拋例外並記錄，未靜默吞掉。
 
+## 階段 3：Vue 手機版巡檢回報表單
+
+本節為原始單張版本的歷史紀錄；目前資料結構、API 與照片操作以後續「階段 3 調整」為準。
+
+**完成日期：**2026-11-02（Asia/Taipei）。功能已實作並在桌面 Chromium 以 390×844 手機寬度實測；尚未使用真實手機。
+
+### 已完成與變更檔案
+- 新增 `frontend/src/views/NewReportView.vue`，提供 `/reports/new`。三個示範工地為信義住宅 A 棟、板橋辦公室 3 樓、新店社區公共區；問題類型與後端一致，嚴重度顯示低／中／高、送出 low／medium／high。
+- 使用 Vue 3、TypeScript、Composition API、script setup、Bootstrap 5；欄位有可點擊標籤、至少 48px 的主要輸入控制、全寬送出按鈕、嚴重度選項、描述字數與欄位錯誤，成功後可建立下一筆並保留工地。
+- 新增 `frontend/src/lib/photo.ts`：由內容簽章辨識 JPEG／PNG／GIF／WebP 與 HEIF ftyp brands，不依賴檔名、accept 或客戶端 MIME；一般格式保持原始 bytes，正規化 File 的 MIME／名稱，並以瀏覽器實際載入確認可預覽。
+- HEIF 內容才動態 import heic-to，使用 `heicTo({ blob, type: 'image/jpeg', quality: 0.85 })`，確認轉換內容為 JPEG 並建立 File 後再預覽與送出。來源與轉換後檔案皆限制 20 MiB；失敗顯示中文錯誤且不送出原始 HEIC。解碼在套件內建 Worker 中處理。
+- 選檔／轉換與送出期間鎖定操作，函式入口也阻擋重複提交；新選圖、移除、成功送出與元件卸載時清理 Object URL；非同步選圖用版本標記避免卸載後重建預覽。卸載時中止待處理的 Axios 請求。
+- 沿用既有 Axios client，以 FormData POST /reports，不手動設定 multipart boundary。處理前端必填／長度、Laravel 422 各欄位、500 與網路失敗；失敗時保留文字和照片，不自動重送。
+- 調整 App.vue、main.ts、router/index.ts：App 作為外框、RouterView 顯示表單，首頁導向 /reports/new。調整 index.html 的繁體中文、標題與 theme-color。
+- 調整 vite.config.ts 與 .env.example：以 server-only API_PROXY_TARGET 設定後端目標，代理 /api 與 /storage；不硬編碼區域網路 IP。README 補充實際功能、啟動與手機連線設定，沒有加入開發進度。
+- package.json / package-lock.json 唯一新增執行期依賴為鎖定版本 heic-to 1.6.7；安裝前已確認官方 API、內建 TypeScript 宣告與 LGPL-3.0 授權。保留未修改的套件授權、所引用的官方 GPL-3.0 及來源資訊於 frontend/public/licenses/（三個檔案），隨 Build 發佈。
+- 新增 frontend/tests/photo.test.mjs，使用 Node 24 內建測試工具；沒有新增測試框架、UI 套件、Pinia、列表、詳細頁或登入。後端來源、資料模型、Migration 與 API 格式均未修改。
+
+### 實際驗證
+- `npm test`：9 項通過，涵蓋四種實際 fixture 的內容辨識、偽裝文字／SVG、HEIF compatible brands、AVIF 排除、截斷標頭、空檔案與超過 20 MiB 的來源檔。
+- `npm run type-check` 與 `npm run build`：通過。heic-to 拆為獨立動態 chunk，約 3,225.48 kB（gzip 809.25 kB）；Vite 提示超過 500 kB 的 chunk 警告，未隱藏警告，沒有把解碼器放入初始主程式。
+- `php artisan test --compact`：既有 56 tests / 332 assertions 全部通過。
+- 真實瀏覽器／真實 API：使用隔離的實體 SQLite 與原本 Laravel public disk，表單分別送出 JPEG、PNG、WebP 及自動轉換的真實 HEIC，共成功建立 4 筆。送出時欄位與按鈕 disabled，成功顯示紀錄編號與建立下一筆；下一筆會清除描述、問題類型、嚴重度、照片，保留工地。
+- SQLite 與 Storage 檢查：前三種保存照片的 SHA-256 均與原 fixture 相同；HEIC 成功存為 image/jpeg，352,459 bytes、1280×854，非原始 HEIC 或只改副檔名。
+- 真實 HEIC 樣本來自 https://raw.githubusercontent.com/strukturag/libheif/master/examples/example.heic（718,114 bytes、多影像 HEIF 容器），套件選取主影像，預覽顯示 1280×854 與「已自動轉為 JPEG」。不是假的 .heic 檔案或 mocked 轉換。
+- 另一份獨立真實 HEIF 樣本 https://raw.githubusercontent.com/strukturag/libheif/master/tests/data/uncompressed_comp_RGB.heif：unci 編碼不受解碼器支援。瀏覽器顯示中文轉換失敗，沒有原檔上傳，也沒有新增紀錄；未宣稱該樣本轉換成功。
+- 實際錯誤操作：缺少必填、1,001 中文字（顯示 1,001 / 1,000）、全形空白、偽裝 JPEG、超限檔案與損壞 HEIC 都被拒絕。3 MiB 真圖片在測試程序 2M 限制下回傳 Laravel 422，photo 錯誤顯示在照片欄位；測試伺服器指向不存在資料庫時，500 顯示中文提示；停止測試前端伺服器後，實際連線失敗顯示尚未確認是否成功的提示。這些失敗均保留表單及可用照片。
+- 測試後停止本次 PHP／Vite 程序並恢復瀏覽器 viewport。僅清理該隔離 SQLite 與四張測試上傳照；原本 database/database.sqlite 的 reports 仍為 0 筆，public reports 檔案為 0 個。測試截圖、紀錄與官方樣本留在 Git 已忽略的 backend/storage/framework/testing/stage3/，不納入提交。
+- `git diff --check` 通過，未 Commit 或 Push。
+
+### 相容性限制與待驗證
+- **尚未在真實 iPhone Safari、Android Chrome 或手機相簿／相機選檔測試**。390×844 桌面 viewport 並非真實手機驗證，不宣稱完全相容。
+- 常見 HEVC HEIC 真實樣本成功；HEIF 是容器，未壓縮 unci 範例已確認不支援，不保證所有 HEIF 編碼。未知格式／轉換失敗會阻止原檔上傳，使用者不需手動操作轉檔。
+- 手機照片方向、HDR／色彩、超大解析度的記憶體占用、原始大型照片轉換後超過 20 MiB，以及真實手機長時間反覆選圖仍待實機驗證；輸出超限檢查已實作，但沒有用實際超過 20 MiB 的轉換輸出宣稱通過。
+- 第一次遇 HEIC 的解碼器下載較大，弱網載入體驗待手機測試。未為通過 Build 而隱藏 chunk 警告。
+- 手機連線所需的 Vite host、API_PROXY_TARGET、APP_URL 與 /storage proxy 已在 README 說明；未修改系統防火牆、區網設定或寫入本機 IP。
+- 未加入冪等鍵／自動重送；網路中斷可能已在伺服器建立資料，提示使用者先確認紀錄再重試。列表與詳細頁留待階段 4。
+
+## 階段 3 調整：多照片上傳與 UI／UX
+
+**完成日期：**2026-11-02（Asia/Taipei）。單張版已改為每筆 1～5 張照片；未開發階段 4。
+
+### 本機資料與 Migration
+- 修改前唯讀確認本機 reports 為 0 筆、既有照片路徑 0 筆，系統 upload_max_filesize=2M、post_max_size=8M、max_file_uploads=20、memory_limit=128M。
+- 新增 `backend/database/migrations/2026_11_02_000001_create_report_images_and_remove_report_image_path.php`，原有 Migration 未改動。先建 report_images、搬移可能存在的舊照片路徑，再移除 reports.image_path；沒有執行 migrate:fresh／refresh 或重建整個資料庫。
+- 先完成 Migration 與記憶體隔離測試，再向使用者確認；使用者明確回覆「允許套用本機 Migration」後，先備份 database.sqlite 至已忽略的 storage/framework/testing/before-multi-photos-*.sqlite，再執行本機一般 migrate。新 Migration 已在 batch 2 成功套用，既有四份 Migration 保留。
+- 最終 reports：id、site_name、issue_type、severity、description、created_at、updated_at；不保留 image_path。
+- 最終 report_images：id（整數自增主鍵）、report_id（NOT NULL，外鍵 reports.id，ON DELETE CASCADE）、image_path（VARCHAR NOT NULL）、sort_order（INTEGER NOT NULL）。report_id + sort_order 有 UNIQUE 索引；API 產生順序為 0～4。
+- down() 若發現一筆回報有多張照片，會拒絕無法保留資料的單張回滾；只有能安全表示為單張時才搬回路徑並還原結構。此保護已在記憶體測試驗證，未對本機資料執行 rollback。
+
+### 修改與新增檔案
+- 新增 ReportImage Model 與 ReportImageResource；Report 新增依 sort_order 排列的 images()，ReportImage 有 report()，圖片表不加未要求的 timestamps。
+- 更新 ReportController、StoreReportRequest、ReportResource、bootstrap/app.php：新增改用 photos[]，驗證 1～5 張與每張 20 MiB；拒絕舊 photo 欄位。每張沿用內容 MIME／尺寸驗證及 UUID 安全檔名。
+- API 的 images 陣列每張只回 id、image_url、sort_order；移除頂層單張 image_path／image_url。列表 with('images')、單筆與新增 load('images')，避免 N+1。
+- Report 與全部 ReportImage 在同一 transaction 建立。寫入前記錄每個唯一路徑，任一檔案或資料庫操作失敗時 rollback，逐一清理已寫入及部分寫入照片；即使某次刪除拋例外仍繼續嘗試其他路徑。
+- 更新 serve.ps1：程序限定 upload_max_filesize=20M、post_max_size=120M、max_file_uploads=20；保留 display_errors=0／log_errors=1。未修改系統 php.ini。
+- 更新原有 ReportApiTest、ReportTest，取代失效的單張欄位與 schema 斷言；新增多照片邊界、排序、外鍵、唯一限制、N+1、升級搬移與拒絕有損回滾的驗證。
+- 更新 NewReportView.vue：兩欄正方形動態網格、張數、一個起始新增格、滿五張隱藏新增格、縮圖更換、獨立 44px 垃圾桶、刪除遞補、個別照片處理狀態與 photos.N 錯誤。取消或失敗保留原圖，送出失敗保留全部照片及文字。
+- 新增 frontend/src/lib/photoCollection.ts 與 frontend/tests/photoCollection.test.mjs，重用既有 preparePhoto()；所有選圖逐張處理，待處理照片顯示排隊狀態。增刪、更換、卸載清理 Object URL，卸載後的轉換完成不會建立遲到預覽。
+- 更新 frontend/package.json 的 test 指令以執行全部 .test.mjs；未安裝任何新套件。README 僅更新多照片功能、API、資料庫升級與程序大小設定。
+
+### 測試結果
+- Laravel：**72 tests / 473 assertions 通過**。涵蓋 1／5 張成功、0／6 張拒絕、單張實際超過 20 MiB 拒絕、JPEG／PNG／WebP／GIF 混合、images ID／URL／sort_order、重讀持續保存、篩選、JSON 404／422、欄位限制與外鍵／唯一限制。
+- 第 2、3、4、5 張各模擬部分寫入後拋例外或回傳 false，共八種情境，確認 Report、ReportImage、Storage 全部清空；第 3 張圖片 INSERT 後資料庫例外同樣完整 rollback／清理。
+- 升級測試以舊結構及真實舊路徑建立資料，再跑新增 Migration，確認舊回報／路徑保留、新欄位正確且舊欄位消失。全新記憶體與全新實體隔離 SQLite 執行全部 Migration 均得到最終結構。
+- 前端：**16 項測試通過**，包含原有內容辨識、五張限制、超量整批拒絕、刪除遞補、新增、逐張處理、取消／失敗保留原圖、更換成功才回收舊 URL、卸載時阻止遲到預覽。
+- Type Check、Build、Pint 與 git diff --check 通過。HEIC 動態 chunk 仍約 3.23 MB，既有大小警告保留，未為通過檢查而隱藏。
+- 真實桌面 Chromium（390×844 viewport）操作：起始僅一個新增格；六張明確整批拒絕；三張混合照片後再加入兩張真實 HEIC。觀察到一張處理中、下一張等待，不同時大量解碼。五張時新增按鈕數為 0，照片格實測為 153.5×153.5px，兩欄等比例裁切。
+- 更換損壞 HEIC 後，原照片的 blob URL 與張數均不變；成功換 GIF、垃圾桶刪除、剩餘照片遞補及再新增均實測通過，垃圾桶沒有觸發選檔更換。
+- 表單實際送出五張（含兩張同一官方有效 HEIC 範例的副本，自動產生 JPEG）成功；重新整理後由 API 讀取，五張、0～4 順序與 URL 仍正確，五個公開圖片 URL 皆 HTTP 200。未將假 HEIC 或改副檔名當成轉換成功。
+- 真實 HTTP **五張各 20 MiB、總照片內容 100 MiB** 上傳成功，每個 Storage 檔案均為 20,971,520 bytes；系統 PHP memory_limit=128M 未另調高。0／6 張及單張超過 1 byte 的實際 HTTP 上傳均回 JSON 422，索引錯誤為 photos.0。
+- 前端第二張實際 3 MiB 圖片在測試伺服器 2M 限制下得到 photos.1 的 422：錯誤出現在第二格，三張照片與文字完整保留。恢復 20M 限制後直接重送成功，另以單張 PNG 實際送出成功。
+- 測試共建立 4 筆回報／14 張照片（含 100 MiB 邊界組），已先核對僅屬本次隔離資料，再清理測試 SQLite、上傳照片及大型 fixture，停止本次 PHP／Vite 程序並恢復 viewport。原本本機資料庫仍為 reports 0、report_images 0；既有資料沒有被刪除。
+- 截圖、測試紀錄與備份保留於 Git 忽略的 backend/storage/framework/testing/，不納入提交。本次未 Commit／Push，原有尚未提交的階段 3 變更亦保留。
+
+### 尚未驗證與限制
+- 尚未在真實 iPhone Safari／Android Chrome 驗證相機、相簿多選、原生選檔取消、方向／HDR／色彩、大尺寸 HEIC、低記憶體與弱網。桌面 viewport 不代表手機實機驗證。
+- 取消更換的無檔案分支已有單元測試；瀏覽器工具不支援以空 FileChooser 直接取消，因此未把該失敗的自動化嘗試宣稱為原生視窗取消實測。
+- HEIC 常見範例可轉換；先前確認不支援的 unci HEIF 編碼限制仍存在，轉換失敗會阻止原檔上傳並保留更換前的照片。
+- 檔案系統與 SQLite 不共用原子交易；可捕捉的寫入／資料庫失敗已完整測試。程序強制終止或儲存裝置連刪除都失敗仍須由 log 排查，未新增無關維運系統。
+
 ## 下一步
 
-待使用者指示開始階段 3：手機巡檢表單與 HEIC／HEIF 自動轉換方案；現有核心 API 可供串接，不自行 Commit／Push。
+待使用者指示開始階段 4：桌機列表、篩選與詳細頁；另安排真實手機相機／相簿、HEIC 方向與大尺寸照片測試。不自行 Commit／Push。

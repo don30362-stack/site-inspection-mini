@@ -4,7 +4,6 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
 class ReportResource extends JsonResource
 {
@@ -16,8 +15,7 @@ class ReportResource extends JsonResource
             'issue_type' => $this->issue_type,
             'severity' => $this->severity,
             'description' => $this->description,
-            'image_path' => $this->image_path,
-            'image_url' => $this->image_path ? Storage::disk('public')->url($this->image_path) : null,
+            'images' => ReportImageResource::collection($this->whenLoaded('images')),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];
