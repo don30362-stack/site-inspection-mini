@@ -1,0 +1,49 @@
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+auth.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Dependencies and build output
+node_modules/
+vendor/
+dist/
+coverage/
+*.tsbuildinfo
+/backend/public/build/
+/backend/public/hot
+/backend/public/storage
+
+# Databases, dumps, and sidecar files
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.db
+*.db-*
+*.sql
+*.sql.gz
+
+# Runtime files (keep scaffold .gitignore files)
+/backend/bootstrap/cache/*
+!/backend/bootstrap/cache/.gitignore
+/backend/storage/**
+!/backend/storage/**/
+!/backend/storage/**/.gitignore
+*.log
+.phpunit.cache/
+.phpunit.result.cache
+.phpactor.json
+.cache/
+.vite/
+*.bak
+
+# Local tools and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
