@@ -8,7 +8,7 @@
 | 階段 | 工作 | 狀態 |
 | --- | --- | --- |
 | 0 | 環境檢查、前後端初始化 | 已完成（2026-11-02） |
-| 1 | SQLite 資料表、Migration、Model | 待開始 |
+| 1 | SQLite 資料表、Migration、Model | 已完成（2026-11-02） |
 | 2 | 巡檢 API、圖片上傳與後端驗證 | 待開始 |
 | 3 | 手機版巡檢回報表單 | 待開始 |
 | 4 | 桌機列表、篩選、詳細頁 | 待開始 |
@@ -57,6 +57,45 @@
 - 初始回報時 Git 位於 `main`，**無 remote、無 commit、無 staged 檔案**；來源檔案為 untracked。此為 2026-11-02 的狀態快照，之後以 `git status` 為準。
 - README 使用面向面試官的固定說明，不放上述進度、環境排錯歷史或 Commit 紀錄。
 
+## 階段 1：SQLite 資料庫與巡檢資料模型
+
+**完成日期：**2026-11-02（Asia/Taipei）
+
+### 已完成
+- 確認 `config/database.php` 與本機 `.env` 使用 SQLite；未設定 `DB_DATABASE` 時由 Laravel 解析為 `backend/database/database.sqlite`，不需更動既有連線設定。
+- 僅在不存在時建立本機 SQLite 檔案，執行一般 `php artisan migrate --no-interaction`，未刪除 Migration、未使用 fresh/refresh、未移除既有資料。
+- 新增 `Report` Model，沿用 Laravel 13 的 `Fillable` attribute，開放五個巡檢輸入欄位的批次寫入；ID 與時間由框架管理。
+- 新增 `2026_11_02_000000_create_reports_table.php`；本階段唯一新增的業務資料表為 `reports`。Laravel 原有三份 Migration 保留且隨一般 migrate 執行，並建立其預設資料表與 migrations 紀錄表。
+- 新增 `ReportTest`，以 `RefreshDatabase` 和 PHPUnit 既有的 SQLite `:memory:` 設定測試，不寫入本機資料庫。
+- 更新 `.env.example` 的 SQLite 預設路徑註解；README 僅補充全新 Clone 後建立 SQLite、執行 Migration 及保留現有資料的安裝說明，未加入開發進度。
+- 未新增 API、Controller、Form Request、前端畫面或套件。
+
+### reports 資料表
+
+| 欄位 | SQLite 實際型別與限制 |
+| --- | --- |
+| id | INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL |
+| site_name | VARCHAR NOT NULL |
+| issue_type | VARCHAR NOT NULL |
+| severity | VARCHAR NOT NULL，CHECK 僅允許 low / medium / high，無預設值 |
+| description | TEXT NOT NULL |
+| image_path | VARCHAR，可為 NULL，僅存 Storage 相對路徑 |
+| created_at / updated_at | DATETIME，沿用 Laravel timestamps（資料庫可為 NULL，Eloquent 建立資料時自動填入） |
+
+### 驗證結果
+- `php artisan migrate --no-interaction`：4 份 Migration 全部成功；`migrate:status` 全部顯示 Ran。
+- 再次執行 migrate：`Nothing to migrate`，確認可重複執行。
+- 唯讀檢查本機 SQLite 的 `sqlite_master`：欄位、主鍵、NOT NULL 與 severity CHECK 限制符合預期；Model 可查詢本機 reports，目前為 0 筆，未留下測試資料。
+- `php artisan test`：**13 tests / 52 assertions 通過**（含原有 2 項）。新測試涵蓋實際 SQLite 結構、三種嚴重度的 Model 寫入／讀取、NULL 照片路徑、時間自動產生、必填欄位拒絕 NULL，以及 critical / LOW / 空字串嚴重度被資料庫拒絕。
+- Pint：本次新增的三份 PHP 檔案格式檢查通過。
+- `npm run type-check`、`npm run build`：通過；未修改前端來源。
+- Git 忽略規則已確認本機 database.sqlite 不納入版本控制；未 Commit 或 Push。
+
+### 待處理問題與決策
+- 無阻擋問題。沙箱內 PHP 將既有 vendor/autoload.php 判定為不可讀；使用核准的正常權限完成測試及本機 Migration，未變更系統 ACL。
+- 照片路徑目前允許 NULL；上傳必填規則、輸入長度、空白字串與問題類型的允許值留待階段 2 驗證設計。SQLite 的 VARCHAR 不強制字串長度，NOT NULL 也不排除空字串；severity 空字串則已由 CHECK 拒絕。
+- 本階段沒有實際圖片檔案與上傳流程；資料庫僅保存可選的路徑字串。
+
 ## 下一步
 
-開始階段 1：確認最小化的 `reports` 資料欄位，建立 SQLite、Migration 與 Model；完成後更新本檔並回報測試結果，不自行 Commit／Push。
+待使用者指示開始階段 2：巡檢 API、圖片上傳與後端驗證；不自行 Commit／Push。

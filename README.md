@@ -36,12 +36,16 @@ site-inspection-mini/
 
 ```powershell
 composer install
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 php artisan key:generate
+if (-not (Test-Path database/database.sqlite)) { New-Item -ItemType File database/database.sqlite | Out-Null }
+php artisan migrate --no-interaction
 php artisan serve --host=127.0.0.1 --port=8000
 ```
 
 如果已存在 `backend/.env`，不要重新複製覆蓋，也不必重新產生 APP_KEY。
+
+確認 `.env` 使用 `DB_CONNECTION=sqlite`，不設定 `DB_DATABASE` 時會自動使用 `backend/database/database.sqlite`。此資料庫檔不納入 Git，首次 Clone 後需以上述步驟建立並執行 Migration；後續更新只需再次執行 `php artisan migrate --no-interaction`，保留既有資料。Migration 會建立 `reports` 及 Laravel 骨架既有的預設資料表。不要以 `migrate:fresh` 或 `migrate:refresh` 更新含有資料的資料庫。
 
 另一個終端機於 `frontend/` 執行：
 
