@@ -11,7 +11,7 @@
 | 1 | SQLite 資料表、Migration、Model | 已完成（2026-11-02） |
 | 2 | 巡檢 API、圖片上傳與後端驗證 | 核心完成；前端轉換已於階段 3 整合（2026-11-02） |
 | 3 | 手機版巡檢回報表單 | 已完成多照片調整；手機實機待驗證（2026-11-02） |
-| 4 | 桌機列表、篩選、詳細頁 | 待開始 |
+| 4 | 桌機列表、篩選、詳細頁 | 已完成；手機實機待驗證（2026-11-02） |
 | 5 | 整合測試與錯誤修正 | 待開始 |
 | 6 | README、GitHub 交件整理 | 待開始 |
 | 7 | 三分鐘 Demo 影片 | 待開始 |
@@ -218,6 +218,62 @@
 - HEIC 常見範例可轉換；先前確認不支援的 unci HEIF 編碼限制仍存在，轉換失敗會阻止原檔上傳並保留更換前的照片。
 - 檔案系統與 SQLite 不共用原子交易；可捕捉的寫入／資料庫失敗已完整測試。程序強制終止或儲存裝置連刪除都失敗仍須由 log 排查，未新增無關維運系統。
 
+## 階段 4：巡檢列表、篩選與詳細頁
+
+**完成日期：**2026-11-02（Asia/Taipei）。沿用多照片 API，沒有修改後端 Endpoint、Model、Migration 或新增套件。
+
+### 已完成與檔案
+- 新增 `frontend/src/views/ReportListView.vue`：/reports 桌機表格、手機卡片，顯示建立時間、工地、類型、中文嚴重度、照片數及詳細入口。直接使用 API 的最新排序，沒有新增分頁或另一套前端篩選。
+- 工地、類型、嚴重度可單獨或 AND 組合篩選，皆有全部選項與清除按鈕；以網址 query 保存條件，詳細頁連結與返回列表都保留條件。空資料、無符合結果、Loading、API／網路錯誤與重新載入皆有介面。
+- 新增 `frontend/src/views/ReportDetailView.vue`：/reports/:id 顯示編號、工地、類型、嚴重度、完整描述（保留換行）、建立時間與 images 陣列；404 顯示「找不到巡檢紀錄」，其他失敗可重試。
+- 新增 `frontend/src/components/ReportGallery.vue`：預設第一張，大圖 object-fit: contain，不裁切；多張顯示可切換縮圖與明顯選取框，單張沒有切換控制。圖片載入／失敗有提示，縮圖為可鍵盤操作的按鈕並有 aria-pressed。
+- 新增 `frontend/src/components/SeverityBadge.vue`：低／中／高文字配合顏色，不只依靠顏色辨識。
+- 更新 App.vue 與 router/index.ts：共用導覽「新增回報／巡檢紀錄」、目前頁面狀態、44px 觸控目標與較寬的桌機外框；所有裝置可進入所有功能。首頁仍導向 /reports/new，新增表單自身 680px 寬度未改。頁面標題隨路由更新。
+- 更新 NewReportView.vue：抽出共用選項與 API 型別，成功畫面新增「查看這筆紀錄」並保留下一筆；照片處理、驗證及 FormData 提交流程未修改。
+- 新增 `frontend/src/lib/reportOptions.ts`：保留任務開始時工作區已修改的七期住宅 A 棟／南屯辦公室 3 樓／逢甲社區公共區，供新增與列表共用；沒有改回 HEAD 的舊工地名稱。
+- 新增 `frontend/src/lib/reports.ts`：Report／ReportImage／ApiResponse／Severity／ReportFilters 型別、篩選網址及日期工具；時間明確使用 zh-TW、Asia/Taipei、24 小時制，缺失／錯誤日期有替代文字。
+- 新增 `frontend/src/lib/useLatestRequest.ts`：AbortController 加版本檢查，即使舊 transport 忽略取消，其成功／失敗也不能覆蓋最新資料、錯誤或 Loading；元件卸載中止請求。
+- 新增 `frontend/tests/reports.test.mjs`、`frontend/tests/latestRequest.test.mjs`；README 僅補充實際列表、篩選、詳細頁與使用說明。
+
+### 自動檢查
+- 前端 **25 項測試全部通過**（既有照片 16 項 + 日期／選項／篩選 4 項 + 請求競態／錯誤／取消 5 項）。
+- 測試包含舊成功回應與舊錯誤晚到但不覆蓋新資料、忽略 Abort 的 transport、重試清除錯誤、404 狀態、卸載後不更新資料、URL 往返、UTC 跨午夜轉為台灣日期。
+- `npm run type-check`、`npm run build` 通過。既有 heic-to 3.23 MB 動態 chunk 大小警告保留，沒有隱藏警告或改動 HEIC 流程。
+- Laravel 既有 **72 tests / 473 assertions 通過**；`git diff --check` 通過。後端來源、Migration、照片工具與 package／lockfile 均無本次變更。
+
+### 真實瀏覽器與 API 整合結果
+- 使用全新隔離 SQLite，先驗證空資料顯示「還沒有巡檢紀錄」，再透過既有 POST API 建立三筆測試回報（1／5／1 張），不是寫死在頁面中的紀錄。只調整隔離測試資料的建立時間以核對排序與時區。
+- 桌面 Chromium 1280×900：列表依 #3、#2、#1 的建立時間排序，時間顯示 2026/11/02 10:00、02:30、2026/11/01 08:00，中文嚴重度及 1／5／1 張照片數正確，導覽 aria-current 與視覺狀態正確。
+- 真實 API 篩選：七期工地回 #3/#1、水電回 #3/#2、中回 #2；三條件組合可得到 #2，改為互斥條件顯示無符合結果；清除後恢復三筆。從三條件列表進入 #2 詳細頁，返回後三個選項與唯一結果完整保留。
+- 測試路由曾對實際 API 加入短延遲（只在 Git 忽略的測試 wrapper），確認 Loading 並可快速選高／低／中；最後 URL 與結果為 medium/#2。延遲未加入正式 API；單元測試另外確定舊回應即使忽略 Abort 仍無法覆蓋最新結果。
+- 五張詳細頁：預設第一張，切換第五張後 main img 真實載入 480×720 直式照片，object-fit 為 contain、選取框與 5/5 正確；五張縮圖均實際載入。一張紀錄的切換群組數為 0。
+- 手機寬度 390×844：表格在可及性樹中不存在，改為三張可點擊卡片；document clientWidth 與 scrollWidth 同為 375px，沒有水平捲動。可進入五張詳細頁並切第三張，縮圖觸控區約 57×57px。
+- 真實 GET /reports/999999 回 API 404，介面顯示「找不到巡檢紀錄」及返回入口。暫時改名本次自建的 #3 測試照片，圖片失敗顯示中文提示；之後已還原測試照片。
+- 僅將測試伺服器指向不存在的隔離 DB，驗證列表與詳細頁真實 500；還原連線後點重新載入可恢復。最後停止本次 Vite 程序，已載入的列表遇到真實連線失敗，正確顯示中文提示與重試按鈕。
+- 新增回歸：首頁 / 仍導向 /reports/new；透過共用導覽進入新增，實際送出五張（四張 JPEG + 官方真實 HEIC 自動轉 JPEG）成功建立 #4，下一筆按鈕仍存在。「查看這筆紀錄」連到 /reports/4，五張完整顯示，第五張 JPEG 真實尺寸 1280×854；返回列表時 #4 位於最新一筆。
+- 整合測試共建立 **4 筆／12 張**。已核對 HEIC 產物並僅清理本次隔離 DB 與照片，測試 PHP／Vite 程序均已停止、viewport 已恢復。原本本機 reports 0、report_images 0，未寫入或刪除本機使用者資料。
+- 截圖與測試紀錄保留在 Git 已忽略的 backend/storage/framework/testing/stage4/（reports-desktop.png、reports-mobile.png、detail-desktop.png），不納入提交。
+
+### 尚未驗證
+- 尚未在真實 iPhone Safari／Android Chrome 實機操作；桌面手機寬度測試不代表實機驗證。實機相機／相簿、原生取消、HDR／方向、低記憶體與弱網的前階段待辦仍保留。
+- 舊版未壓縮 unci HEIF 不支援與大型 HEIC 動態檔的限制未改動。此次未加入不必要的替代轉檔流程或新套件。
+- 列表依既有 API 不分頁；未加入登入、角色、匯出、圖片編輯或其他階段外功能。未 Commit／Push。
+
+## 階段 4 補強：全站前端 404
+
+**完成日期：**2026-11-02（Asia/Taipei）。
+
+- 新增 frontend/src/views/NotFoundView.vue：置中的簡潔卡片、404 數字、裝飾性頁面 SVG、指定標題與說明，以及 RouterLink「查看巡檢紀錄／新增巡檢回報」。沿用共用 Header、Bootstrap 5、深藍／青綠，不新增套件、插畫或動畫。
+- router/index.ts 最後新增 /:pathMatch(.*)* catch-all，meta.title 為「找不到頁面」，原有路由與 / 導向 /reports/new 保留，沿用 afterEach 的 document.title 機制。
+- App.vue 的紀錄導覽改以實際 matched route 判斷，避免 /reports/123/extra 被誤標為目前巡檢紀錄頁；未重新建立 Header。
+- 前端未知網址與 API 紀錄 404 分開處理；ReportDetailView、Laravel API 404 格式、資料庫／Migration、照片與其他業務功能未修改。README 不另加冗長說明。
+- `npm test` 25 項、`npm run type-check`、`npm run build`、`git diff --check` 全部通過。既有 HEIC 動態 chunk 大小警告保留；此次小型路由補強以實際瀏覽器驗證，沒有新增重複實作的字串比對測試或測試框架。
+- 桌面 Chromium 實測 /unknown、/reports/123/extra 顯示「找不到這個頁面」，標題為「找不到頁面 · Site Inspection Mini」；未知網址重新整理仍正常。
+- 兩個 RouterLink 按鈕分別到 /reports、/reports/new；/ 仍導向 /reports/new。真實 API 的正常 /reports/1 詳細頁可讀取，/reports/999999 仍顯示「找不到巡檢紀錄」，不被 catch-all 接管。
+- 1280×900 桌機 clientWidth/scrollWidth 均為 1280；390×844 手機寬度下均為 375，無水平捲動，按鈕高度約 48px。截圖位於 Git 忽略的 backend/storage/framework/testing/global404/not-found-mobile.png。
+- 本機有既有資料，測試沒有複製使用者紀錄；僅唯讀取得 reports/report_images 結構，新建隔離 SQLite 並插入一筆測試紀錄，未執行 Migration、未使用使用者照片。驗證後已停止本次程序、清理該隔離 DB 並恢復 viewport，本機資料未改動。
+- 真實手機 iPhone Safari／Android Chrome 仍未實機驗證；此次是桌面瀏覽器不同 viewport。未 Commit／Push；先前階段 4 尚未提交的檔案均保留。
+
 ## 下一步
 
-待使用者指示開始階段 4：桌機列表、篩選與詳細頁；另安排真實手機相機／相簿、HEIC 方向與大尺寸照片測試。不自行 Commit／Push。
+待使用者指示開始階段 5：整合測試與錯誤修正；另安排真實手機相機／相簿、HEIC 方向與大尺寸照片測試。不自行 Commit／Push。

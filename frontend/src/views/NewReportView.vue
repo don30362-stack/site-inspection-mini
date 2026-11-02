@@ -1,19 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, reactive, ref } from 'vue'
 import { isAxiosError } from 'axios'
+import { RouterLink } from 'vue-router'
 import { http } from '../lib/http'
 import { MAX_PHOTOS, usePhotoCollection } from '../lib/photoCollection'
+import { sites, issueTypes, severities } from '../lib/reportOptions'
+import type { ApiResponse, Report } from '../lib/reports'
 
-const sites = ['信義住宅 A 棟', '板橋辦公室 3 樓', '新店社區公共區']
-const issueTypes = ['系統櫃安裝', '水電', '裝修', '安全防護', '其他']
-const severities = [{ value: 'low', label: '低' }, { value: 'medium', label: '中' }, { value: 'high', label: '高' }]
 type Field = 'site_name' | 'issue_type' | 'severity' | 'photos' | 'description'
 type FieldErrors = Partial<Record<Field, string>>
-interface ApiResult {
-  data: { id: number } | null
-  message: string
-  errors: Record<string, string[]>
-}
+type ApiResult = ApiResponse<Pick<Report, 'id'> | null>
 
 const form = reactive({ site_name: '', issue_type: '', severity: '', description: '' })
 const errors = ref<FieldErrors>({})
@@ -151,7 +147,8 @@ onBeforeUnmount(() => {
       <span class="success-mark mb-3" aria-hidden="true">✓</span>
       <h2 class="h4 fw-bold">回報已送出</h2>
       <p class="text-secondary">巡檢紀錄 #{{ successId }} 已建立，照片已保存。</p>
-      <button class="btn btn-primary btn-lg mt-2" type="button" @click="startNextReport">建立下一筆回報</button>
+      <RouterLink :to="`/reports/${successId}`" class="btn btn-primary btn-lg mt-2">查看這筆紀錄</RouterLink>
+      <button class="btn btn-outline-secondary btn-lg mt-2" type="button" @click="startNextReport">建立下一筆回報</button>
     </section>
 
     <form v-else ref="formElement" class="card border-0 shadow-sm" novalidate :aria-busy="busy" @submit.prevent="submitReport">
