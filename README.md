@@ -82,9 +82,36 @@ JPEG、PNG、GIF、WebP 原內容直接上傳；HEIC／HEIF 先在瀏覽器自�
 
 ### 使用真實手機連線本機
 
-手機與電腦須在同一個可互通的區域網路。前端以 `npm run dev -- --host 0.0.0.0` 啟動，手機開啟 `http://<電腦的區域網路位址>:5173/reports/new`；請用實際位址替換，不能使用手機自己的 localhost。系統若阻擋連線，需由使用者確認區網與防火牆設定。
+手機與電腦須在同一個可互通的區域網路。Windows 開啟 PowerShell 執行 `ipconfig`，查看目前使用的 Wi-Fi 或乙太網路介面之 IPv4 位址（不要使用 VPN／虛擬網卡位址）。以下 `<區網 IPv4>` 都要換成該位址，不是手機自己的 localhost。
 
 前端維持 `VITE_API_BASE_URL=/api`，可將 `.env.example` 複製為未納入 Git 的 `.env.local`，以 `API_PROXY_TARGET` 設定 Vite 所連線的後端（預設 `http://127.0.0.1:8000`）。Vite 同時代理 `/api` 與 `/storage`，後端可維持只聽本機。若要讓手機開啟 API 的照片 URL，後端 `.env` 的 `APP_URL` 應設定為手機可連線的 Vite 網址 `http://<電腦的區域網路位址>:5173`，然後重新啟動服務；正式部署則設為實際對外網址。程式未硬編碼任何區域網路 IP。
+
+完成首次安裝後，以兩個 PowerShell 終端機啟動：
+
+```powershell
+# 終端機一：backend/，先在 .env 設定 APP_URL=http://<區網 IPv4>:5173
+# 若先前有快取設定，先執行 php artisan config:clear
+.\serve.ps1
+
+# 終端機二：frontend/，.env.local 的內容：
+# VITE_API_BASE_URL=/api
+# API_PROXY_TARGET=http://127.0.0.1:8000
+npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
+```
+
+手機開啟 `http://<區網 IPv4>:5173/reports/new`。若 5173 已被占用，先停止自己先前啟動的 Vite，或同步更換指令連接埠、APP_URL 與手機網址。連線遭阻擋時，請檢查同網段／訪客 Wi-Fi 隔離及 Windows 防火牆的私人網路規則，不需公開 Laravel 的連接埠。
+
+送出後在詳細頁確認照片能顯示，並將 `GET /api/reports/{id}` 回傳的一個 `images[].image_url` 貼到手機瀏覽器開啟；網址應為上述區網主機的 `/storage/...`，不能是 `127.0.0.1` 或 `localhost`。重新整理詳細頁後照片也應存在。
+
+以下仍須以真實手機驗收，桌面縮放不能替代：
+
+1. 使用相機拍照並上傳。
+2. 從相簿一次選取多張照片。
+3. 點縮圖更換、取消選檔、刪除照片。
+4. 檢查直式／橫式方向、色彩及預覽。
+5. 上傳手機實際拍攝的 HEIC，確認自動轉換。
+6. 成功後查看詳細頁，再前往列表篩選。
+7. 重新整理詳細頁，確認所有照片仍存在。
 
 ## 巡檢 API
 
@@ -128,6 +155,8 @@ JPEG、PNG、GIF、WebP 直接保存至 public disk。**API 本身仍只接受�
 
 ```powershell
 php artisan test
+composer check-platform-reqs
+php vendor/laravel/pint/builds/pint --test
 ```
 
 Feature Tests 使用 SQLite 記憶體資料庫與隔離的本機 Storage，涵蓋 Model、API、篩選、輸入限制、四種實際圖片內容、20 MiB 邊界及寫入失敗清理。圖片 fixture 已隨專案提供，不依賴 GD 產生測試圖。不包含 HEIC／HEIF 自動轉換測試。
