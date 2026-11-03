@@ -467,6 +467,15 @@
 - `docker compose -f deploy/compose.production.yaml config --quiet`、`config --images` 與 `git diff --check` 通過。解析後確認 Nginx 連接兩個網路、PHP 僅 default，外部網路名稱／別名、loopback 埠及三個 Volume 正確；Images 仍為原 GHCR php／nginx，預設 latest。
 - 僅驗證設定解析，尚未驗證跨網路實際代理／HTTPS 流量；未建立或修改 Docker 網路，未執行 Up／Down／Restart。未修改 README、GitHub Actions 或 Home Fitness，未連線 Lightsail，未 Commit／Push。
 
+## 正式 Compose：Caddy HTTPS 入口設定
+
+**完成日期：**2026-11-03（Asia/Taipei）。僅新增 `deploy/Caddyfile`、修改 `deploy/compose.production.yaml` 與本紀錄。
+
+- 新增官方 `caddy:2` 服務，發布 TCP 80／443，僅加入 Compose default 網路，反向代理 `nginx:80`。Caddyfile 唯讀掛載，`caddy_data`／`caddy_config` 分別持久化 /data／/config；既有 PHP／Nginx、GHCR Images、SQLite／Storage／photos 三個 Volume、loopback 18082 與 inspection_ingress 設定不變。
+- Compose `config --quiet`、`config --services`、`config --images` 與解析後的服務／埠／網路／掛載／五個 named volumes 檢查通過；`git diff --check` 通過。未啟動 Caddy，尚未驗證 Caddy runtime 設定、正式 ACME 簽發／續期、HTTPS、100 MiB 上傳、容器重建後憑證保留或真實來源 IP。
+- 依使用者提供的伺服器現況，Home Fitness 已占用主機 80／443，直接在同機啟動本設定會有埠衝突，正式啟用前須另行確認入口安排。Site Inspection 現有 Nginx 清除轉送 IP 標頭，因此加入 Caddy 不代表已完成真實 IP／HTTPS 的後端信任設定；此階段未擴大修改。
+- 未連線 Lightsail、未執行 Docker Up／Down／Restart，未修改 Home Fitness、GitHub Actions、業務程式或其他 Docker 設定；未新增 Certbot／其他代理服務，未 Commit／Push。
+
 ## 下一步
 
 使用者建立 GitHub Actions，確認 CI 後再另行授權 GHCR／SSH 部署；本次不推送 Image 或連線雲端。正式管理密碼與先前手機拖曳／燈箱／刪除實機驗收仍由使用者確認。

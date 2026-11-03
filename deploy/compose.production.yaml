@@ -45,10 +45,27 @@ services:
       - photos:/var/www/photos:ro
     restart: unless-stopped
 
+  caddy:
+    image: caddy:2
+    depends_on:
+      - nginx
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      default: {}
+    restart: unless-stopped
+
 volumes:
   sqlite:
   storage:
   photos:
+  caddy_data:
+  caddy_config:
 
 networks:
   inspection_ingress:
