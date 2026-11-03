@@ -459,6 +459,14 @@
 - 尚未測試真實手機連線 Docker、雲端 Linux 主機、外部反向代理／HTTPS／來源 IP 鏈、GHCR 或 SSH 部署；此次 loopback HTTP 結果不能取代上述驗收。原有手機拖曳／燈箱／刪除的待驗收項目仍保留。
 - GitHub Actions Workflow／遠端 CI 執行由使用者處理，本次未建立亦未宣稱通過。下一階段仍需準備 Registry 權限與 Image 命名、部署主機與 SSH known_hosts／金鑰、正式 APP_KEY／管理雜湊、網域／TLS／可信代理及資料備份策略。
 
+## 正式 Compose：獨立代理網路
+
+**完成日期：**2026-11-03（Asia/Taipei）。僅修改 `deploy/compose.production.yaml` 與本紀錄。
+
+- Nginx 保留 default 網路，另加入 external `site-inspection-ingress`，別名 `site-inspection-upstream`；PHP 仍僅使用 default。保留 GHCR Images、`127.0.0.1:18082:80`、SQLite 與三個持久化 Volume，未新增服務。
+- `docker compose -f deploy/compose.production.yaml config --quiet`、`config --images` 與 `git diff --check` 通過。解析後確認 Nginx 連接兩個網路、PHP 僅 default，外部網路名稱／別名、loopback 埠及三個 Volume 正確；Images 仍為原 GHCR php／nginx，預設 latest。
+- 僅驗證設定解析，尚未驗證跨網路實際代理／HTTPS 流量；未建立或修改 Docker 網路，未執行 Up／Down／Restart。未修改 README、GitHub Actions 或 Home Fitness，未連線 Lightsail，未 Commit／Push。
+
 ## 下一步
 
 使用者建立 GitHub Actions，確認 CI 後再另行授權 GHCR／SSH 部署；本次不推送 Image 或連線雲端。正式管理密碼與先前手機拖曳／燈箱／刪除實機驗收仍由使用者確認。

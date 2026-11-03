@@ -31,6 +31,11 @@ services:
 
   nginx:
     image: ghcr.io/don30362-stack/site-inspection-mini-nginx:${SITE_IMAGE_TAG:-latest}
+    networks:
+      default: {}
+      inspection_ingress:
+        aliases:
+          - site-inspection-upstream
     depends_on:
       php:
         condition: service_healthy
@@ -44,3 +49,8 @@ volumes:
   sqlite:
   storage:
   photos:
+
+networks:
+  inspection_ingress:
+    external: true
+    name: site-inspection-ingress
