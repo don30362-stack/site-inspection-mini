@@ -1,3 +1,6 @@
+> 本文件完整保存搬移前的開發紀錄。各段日期、檔名、環境與待辦為當時狀態，不代表目前狀態；文內程式碼路徑以專案根目錄為準。
+> 最新摘要見[驗證現況](../PROJECT_STATUS.md)，操作方式見[開發](../development.md)、[部署](../deployment.md)與[維運](../operations.md)。原根目錄 PROJECT_STATUS.md 已移至此處，原 backend/ADMINISTRATION.md 已整併至維運文件。
+
 # Site Inspection Mini｜開發進度
 
 > 本文件記錄內部開發階段、驗證與問題；`README.md` 僅保留對外專案說明。
