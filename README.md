@@ -135,6 +135,21 @@ npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
 
 輸入文字會去除頭尾空白（含全形空白），拒絕全空白欄位。照片以內容 MIME 與圖片尺寸資訊驗證，不信任檔名或用戶端 Content-Type；不接受 SVG、偽裝圖片或客戶端指定儲存路徑。照片相對路徑只存於 `report_images.image_path`，同一回報依 `sort_order` 排列；資料庫交易或任一照片寫入失敗時，回滾整筆並清理本次所有已寫入及部分寫入照片。
 
+### 公開上傳保護
+
+POST 每個來源 IP 每分鐘最多 **10 次新增嘗試**（含驗證失敗），超限回 429 與中文提示、Retry-After；DELETE 仍為每 IP 每分鐘 5 次。來源 IP 的可信代理設定見 [後端設定說明](backend/ADMINISTRATION.md)。
+
+巡檢照片總容量預設 **2 GiB（2,147,483,648 bytes）**。只計算本專案 `report_images` 關聯且實際存在的 public 照片，重複路徑只計一次，不含私人備份、未關聯檔案或其他專案資料。新增前以「目前占用量＋本次照片總大小」檢查，等於上限仍可保存，超過則整筆拒絕（422，photos 中文錯誤），表單保留內容與照片。管理者刪除紀錄並釋放照片空間後即可再次新增；每張 20 MiB、每筆 1～5 張不變。
+
+可在未提交的 `backend/.env` 調整：
+
+```dotenv
+CACHE_STORE=file
+REPORT_PHOTO_STORAGE_LIMIT_BYTES=2147483648
+```
+
+容量以非負整數 bytes 設定，0 會拒絕新增照片；調整後執行 `php artisan config:clear` 並重啟後端。新增與刪除共用本專案 file cache lock，包含失敗清理／還原期間；忙碌時回 409，稍後再試。單機服務請保留 file cache，勿在請求處理中清除 cache。為避免慢請求的鎖到期而超額，容量鎖不自動到期；若程序被強制終止而持續忙碌，先停止並確認無新增／刪除請求，再於 backend/ 執行 `php artisan cache:forget file-store-lock:report-photo-capacity file` 解除殘留鎖。Laravel 13 的 file lock 會加上 `file-store-lock:` 前綴；本專案 file store 的 path 與 lock_path 相同，此指令只移除該鎖，不清空其他快取。
+
 所有 API 回應均為 `{ "data": ..., "message": "...", "errors": {} }`。成功時 data 是單筆物件或列表陣列；每筆包含 id、site_name、issue_type、severity、description、images、created_at、updated_at。images 為陣列，每張包含 id、image_url、sort_order（從 0 起算），依序排列；不回傳舊版頂層 image_path／image_url。驗證失敗回傳 422，data 為 null，errors 以欄位名稱對應錯誤訊息陣列；照片整組錯誤使用 photos，個別照片錯誤使用 photos.0、photos.1 等索引；404 與 500 同樣使用此結構，500 不回傳內部例外細節。
 
 PowerShell 上傳範例（替換為本機照片路徑）：

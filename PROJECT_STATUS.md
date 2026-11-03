@@ -356,6 +356,81 @@
 - 本次提供按鈕 2 倍切換與平移，**未實作或宣稱雙指縮放已通過**。大容量、低記憶體與弱網極端情境仍是原有限制。
 - 前次使用者回報的 iPhone 相機／相簿／HEIC 與核心流程驗收結果保留，但不擴大為本次新增拖曳與燈箱操作已實機驗證。
 
+## 功能補強：管理密碼刪除與簡單限流
+
+**完成日期：**2026-11-03（Asia/Taipei）。新增紀錄刪除與兩項原生限流；未修改既有 Migration、照片規格、排序／HEIC／燈箱、Model／Resource、README 或套件。未開始 Docker／CI/CD、未連線 Lightsail、未操作其他專案。未 Commit／Push。
+
+### 後端與設定
+- `DELETE /api/reports/{report}` 接收 JSON body 的 `admin_password`，使用 `DeleteReportRequest` 驗證，不接受 URL query 的密碼。Controller 以 `Hash::check` 比對伺服器 `ADMIN_REPORT_PASSWORD_HASH`，空值／非法雜湊回 503，錯誤密碼 403、缺少／非法輸入 422、缺失／重複刪除 404、同筆正在處理 409。
+- 新增 `config/inspection.php`、`.env.example` 空白設定與 `reports:admin-password-hash` 指令。指令隱藏輸入並要求兩次一致，至少 12 字元、最多 72 個 UTF-8 位元組，只輸出雜湊、不寫 .env。實際確認 bcrypt 會忽略第 72 byte 後的內容，因此產生與 API 驗證都拒絕超長密碼，避免截斷比對。密碼不 trim、不 flash、不寫入前端 Bundle 或 localStorage；未設定本機真實管理密碼。
+- `app/Actions/DeleteReport.php`：同筆 cache lock，重新讀取資料；串流備份待刪照片至 private disk，DB 交易中移除 public 照片與紀錄，關聯依既有外鍵 cascade 清理。一般照片刪除／DB 失敗會回滾與還原照片；不刪其他紀錄引用的路徑。成功必須完成暫存備份清理。
+- 若還原本身也失敗，回 500、保留 private 備份並記錄排查路徑；若 DB 已提交但備份清理失敗，明確回 500 說明「紀錄已移除，但照片備份清理未完成」，不誤報 200。檔案系統／SQLite 無法共用原子交易，強制終止或底層持續故障仍需管理者核對恢復。
+- `AppServiceProvider` 定義原生 limiter，POST 每 IP 每小時 5 次嘗試（含表單驗證失敗），DELETE 每 IP 每分鐘 5 次嘗試、跨紀錄共用額度；429 保留一致 JSON、中文訊息與 Retry-After，GET 不受這兩項額度限制。`config/cache.php` 的 limiter 預設持久 file store，phpunit.xml 另指定 array 隔離測試，不引入 Redis。
+- 修正既有 `bootstrap/app.php` 例外處理，保留 Laravel `HttpResponseException` 的自訂回應，避免原生 limiter 的 429 被改成 500；亦排除 admin_password 的 trim／flash。
+- 新增 `app/Http/Middleware/TrustProxies.php`：預設不信任 forwarding；只對明列 `TRUSTED_PROXIES` 的 socket peer 接受 X-Forwarded-For，沒有依 Host 自動信任或 forwarded host／proto 信任。設定拒絕 wildcard／全網段，Vite /api proxy 覆寫 X-Forwarded-For 為連線 socket IP 並移除 Forwarded。單層代理的必要覆寫、loopback 設定與密碼操作見新增 `backend/ADMINISTRATION.md`；未宣稱已驗證未來雲端／多層代理。
+
+### 前端
+- 詳細頁加入 `DeleteReportDialog.vue`：刪除按鈕、不可復原說明、密碼欄位、取消／確認、Loading、防重送、焦點循環、Escape 及背景捲動處理。成功後由 ReportDetailView 返回原篩選 query 的列表，沒有改動照片圖庫。
+- `useReportDeletion.ts` 管理單次請求與中文錯誤：403／422／404／409／429／503／500／網路失敗不視為成功；每次嘗試與關閉時清空密碼，頁面卸載取消請求並防止晚到回應觸發成功導航。網路結果不明時不自動重試，提示先重新載入確認。
+- NewReportView 只補 POST 429 的中文提示，保留既有欄位與照片；沒有改動排序、照片處理或 FormData 流程。
+
+### 測試與實際驗證
+- Laravel **90 tests／599 assertions 全通過**（SQLite :memory:、fake public／local Storage、array limiter）；Pint 通過。新增 DeleteReportTest、ReportRateLimitTest，涵蓋密碼／未設定／非法雜湊／query 拒絕／空白保留／bcrypt byte 邊界、密碼指令、刪除與外鍵照片清理、其他紀錄與共用照片保護、重複 404、並行 lock、備份失敗、第 3 張刪除失敗（false／exception）、DB 失敗回復、回復失敗保留備份、提交後備份清理失敗 500，以及兩項限流／到期／來源 IP spoofing。
+- 前端 **31 項測試全通過**（既有 27 + 刪除 4），涵蓋必填、防重送、密碼清空、錯誤訊息、網路結果不明不重試、卸載後晚到回應不成功。`npm run type-check`、`npm run build`、`git diff --check` 通過；既有 HEIC 動態 chunk 大小警告保留。
+- 真實瀏覽器／Laravel 以本次獨立 `test.sqlite`、Storage 與 file cache 運作，API 18100／Vite 15193；透過真實 POST 建立 3 筆（1／5／1 張），沒有操作原資料。測試管理密碼／雜湊只存在 Git 忽略的隔離工具與暫存檔。
+- 實測刪除確認、空密碼、錯誤密碼 403、未設定雜湊 503、暫時連到缺失測試 DB 的真實 500、累積嘗試 429：都顯示中文訊息、不導航、不誤報成功，密碼清空。取消／Escape 不刪除，正向 Tab 回密碼欄位、關閉焦點回按鈕；390×844 視窗無水平溢出，1280×900 可操作。真實 iPhone 虛擬鍵盤尚未驗收。
+- QA router 僅延遲真實 DELETE 1.5 秒，確認送出與取消皆 disabled。實際刪除五張的 #2 後返回列表，site_name／issue_type／severity 三條件保留，只剩符合的 #3。SQLite 剩 #1/#3、2 個照片關聯、2 個 public 檔案，其他照片 SHA-256 未變，private 備份為 0。五個已刪照片 URL 均 404、兩個保留照片 URL 均 200，重複 DELETE 為 404。
+- 實際 Vite/API HTTP 傳入不同偽造 X-Forwarded-For／Forwarded，前五次非法 POST 為 422、第六次為 429，Retry-After 約 3598 秒，證明本機單層代理不能用換標頭繞過配額。瀏覽器新增表單真正收到 POST 429 時，已填文字與照片保留。
+- 瀏覽器收集的 Console error／warn 為空；隔離 Laravel log 只有故意注入的缺失 DB 例外，未含測試密碼。原 `.env` 雜湊不變、13 個原照片雜湊不變、原 SQLite 大小／修改時間不變；未操作原 DB、照片或備份。
+- 已停止本次 API／Vite 程序、清理隔離 DB／剩餘照片／cache／暫存雜湊，恢復 viewport。截圖與 JSON 證據保留於 Git 忽略的 `backend/storage/framework/testing/report-delete-20261103/`，包含 delete-confirm-mobile.png、deleted-filtered-list.png、delete-db-result.json、http-result.json、protected-result.json。
+
+### 待處理／限制
+- 由使用者在本機依 `backend/ADMINISTRATION.md` 產生並設定真正管理雜湊；本次沒有替使用者選擇或寫入真實密碼。未設定時刪除預設停用。
+- 真實 iPhone／Android 的刪除確認、虛擬鍵盤與弱網操作，以及實際部署反向代理的來源 IP／HTTPS，仍需在對應環境驗收；本機 Vite 單層驗證不能代替部署驗收。
+- 檔案回復或暫存備份清理也失敗時須管理者依 log 處理，不宣稱具有跨 DB／檔案系統原子性；未加入角色、稽核、配額或背景清理系統。
+
+## TRUSTED_PROXIES CIDR 驗證補強
+
+**完成日期：**2026-11-03（Asia/Taipei）。本次僅修改 `backend/config/inspection.php`、`backend/tests/Feature/ReportRateLimitTest.php` 與本紀錄，保留既有未提交工作。
+
+- CIDR 遮罩必須為純數字，IPv4 限 1～32、IPv6 限 1～128；拒絕空遮罩、0、負數、正負號、非數字、小數／指數、超出範圍與多餘斜線。合法單一 IP、合法 CIDR、混合清單與既有清單空白處理均保留。
+- 新增 44 個設定案例，直接載入實際 config 驗證；測試暫設的環境變數於 finally 還原，不寫入 .env。涵蓋兩種 IP 的上下邊界、一般 CIDR、合法清單及非法遮罩／斜線／混合清單。
+- Laravel 全部 **134 tests／643 assertions 通過**（SQLite :memory:、fake Storage），包含既有來源 IP、限流與刪除測試；全專案 Pint 檢查及 `git diff --check` 通過。
+- 未修改 TrustProxies Middleware、正常來源 IP 判斷、限流／刪除邏輯、README 或本機資料；未 Commit／Push。
+
+## 公開上傳保護：每分鐘限流與照片總容量
+
+**完成日期：**2026-11-03（Asia/Taipei）。本次只調整上傳保護與必要的刪除互斥；既有未提交工作保留。未修改 Migration、照片每張 20 MiB／每筆 1～5 張、格式驗證、拖曳／HEIC／燈箱；沒有新套件、額外資料表、排程清理、監控或配額介面，未操作 Home Fitness／Docker／雲端，也未 Commit／Push。
+
+### 實作與設定
+- `AppServiceProvider` 的 POST 限流改為每 IP 每分鐘 **10 次嘗試**，429 中文訊息及前端提示同步更新；DELETE 保持每 IP 每分鐘 5 次。POST 使用新的分鐘 counter key，避免沿用舊一小時 cache 期限；未清除正式 cache，也未修改可信代理來源判斷。
+- `config/inspection.php` 與 `.env.example` 新增 `REPORT_PHOTO_STORAGE_LIMIT_BYTES`，預設 **2147483648（2 GiB）**，以非負整數 bytes 設定，0 拒絕所有新增照片；不寫入現有 .env。
+- 新增 `app/Support/ReportPhotoQuota.php`：逐一累計本專案 `report_images` 關聯且實際存在的 public 檔案大小，distinct 路徑只計一次，不計其他專案／未關聯檔案／private 備份；加上本次全部照片大小，等於上限可新增，超過則在建立紀錄／寫檔前回 422 的 photos 中文錯誤，拒絕整筆。
+- ReportController 的容量檢查、交易、保存與失敗清理均位於同一把 cache lock 內；DeleteReport 也共用此鎖，直到刪除或失敗還原完成，避免新增在照片暫時移除時低估容量。刪除原有密碼驗證、每筆 lock、交易／備份回復與限流邏輯保留。鎖忙碌回 409，新增與刪除前端皆提供相應提示，不自動重試。
+- HTTP 沿用單機 `CACHE_STORE=file`，不新增 Redis。容量鎖不自動到期，避免慢請求尚未完成就被另一請求取得；正常／例外皆 finally 釋放。若程序遭強制終止留下鎖，需先停止並確認無新增／刪除請求，再由管理者執行 `php artisan cache:forget file-store-lock:report-photo-capacity file`（鍵名前綴已於後續隔離測試確認並修正）；沒有自動清理服務。此限制與設定已記入 README。
+- README 僅新增「公開上傳保護」段落，說明速率、容量計算／設定、422／409、刪除釋放後再新增及必要操作；backend/ADMINISTRATION.md 只同步 POST 次數。
+
+### 測試結果
+- Laravel 全部 **142 tests／726 assertions 通過**。新增 `ReportPhotoQuotaTest` 及 `tests/Fixtures/quota-worker.php`；一般 Feature Tests 用 SQLite :memory: 與 fake Storage，獨立行程測試用自行建立的空 SQLite／Storage／file cache，結束只清理該 UUID 測試目錄，不操作本機正式 DB／照片。
+- 容量測試包含：預設 2 GiB、正常新增、剛好達上限、下一筆超額、五張總和超額整筆拒絕、0 上限、重複路徑去重、缺失檔案不計、其他專案／未關聯檔案／private 備份不計、刪除後可再新增、寫入失敗清理後不占額度，以及共用鎖阻擋新增與刪除且不修改資料。phpunit.xml 固定測試容量設定，避免私人 .env 影響預設值測試。
+- **真實跨行程互斥驗證：**先讓第一個 PHP 行程在已取得 file lock、完成容量檢查後暫停；第二個行程透過實際 Laravel HTTP Kernel 新增時回 409，不能同時消耗最後空間。釋放第一個後保存成功 201；第二個重試回容量 422。獨立 DB 最終只有 1 筆／1 張、實體大小等於容量上限，沒有超額；並非只 mock lock 或順序呼叫兩次。
+- POST 第 10 次成功、第 11 次 429、非法輸入計次、偽造 forwarding 無法繞過、可信代理 IP 隔離、61 秒後恢復，以及舊 hourly counter 不影響新 minute window 均通過；DELETE 原本的 5 次限制與失敗回復回歸通過。
+- 前端 **32 tests 通過**，包含共用容量鎖忙碌訊息與原本照片／刪除／篩選測試；`npm run type-check`、`npm run build`、全專案 Pint、`git diff --check` 通過。既有 HEIC 大型 chunk 警告保留。本次未另做真實手機或瀏覽器表單操作，不將型別／單元測試當成實機驗收。
+
+### 限制
+- 容量為目前正式關聯照片的邏輯上限，不是整台磁碟／其他專案的用量配額；private 刪除備份與孤兒檔案不計入，也沒有新增排程清理。
+- 互斥依賴單機共用持久 file cache；不要在請求處理中清 cache 或使用 HTTP array／null store。多主機部署未在此階段處理，強制終止的殘留鎖需依 README 人工排查。
+- 先前真實手機拖曳／燈箱／刪除及部署代理的待驗收事項仍保留，未宣稱本次已補做。
+
+## 容量鎖異常解除指令修正
+
+**完成日期：**2026-11-03（Asia/Taipei）。本次僅修改 README、本紀錄及新增 `backend/tests/Feature/ReportPhotoLockRecoveryTest.php`，保留既有未提交工作。
+
+- 檢查目前 Laravel 13 vendor 原碼：`FileStore::lock()` 會將名稱改為 `file-store-lock:{$name}`；因此 `ReportPhotoQuota::LOCK_KEY` 雖為 report-photo-capacity，實際 file cache 鍵為 **file-store-lock:report-photo-capacity**。檔案路徑再由 FileStore::path() 對實際鍵做 SHA-1 分層；cache:forget 不會自動補上 lock 前綴。
+- README 原指令 `php artisan cache:forget report-photo-capacity` 即使顯示成功，仍未移除容量鎖。已改為 **`php artisan cache:forget file-store-lock:report-photo-capacity file`**，明確指定 file store；適用目前 path 與 lock_path 相同的設定，仍須先停止並確認沒有新增／刪除請求，不清空其他快取。
+- 新增一個最小測試，僅將測試 app 的 cache.default 設為 file，path／lock_path 指向自行建立的 UUID 隔離目錄。實際取得永久鎖、確認帶前綴鍵的檔案與 owner，再透過 Artisan 執行原指令，驗證仍無法取得鎖；執行修正後指令後可重新取得鎖，無關測試快取仍保留，finally 只清理該隔離目錄。
+- 相關測試（新解除鎖測試＋ReportPhotoQuotaTest）**8 tests／55 assertions 全通過**；全專案 Pint 與 `git diff --check` 通過。未執行正式 cache:forget／cache:clear，未操作實際使用者快取、照片或資料庫；ReportPhotoQuota、Controller、DeleteReport、Migration 與限流程式皆未修改。未 Commit／Push。
+
 ## 下一步
 
-由使用者完成本次照片拖曳與燈箱的真實手機驗收，再依指示統一整理交件文件。階段 5 原核心驗收已完成；未自行 Commit／Push。
+由使用者設定本機管理密碼並完成新刪除操作的實機驗收；先前新增的照片拖曳／燈箱待實機項目仍保留。README 留待 Docker 與 CI/CD 完成後再依指示統一整理；未自行開始上述工作或 Commit／Push。

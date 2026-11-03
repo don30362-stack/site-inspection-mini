@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { http } from '../lib/http'
 import type { ApiResponse, Report } from '../lib/reports'
 import { formatReportDate, readReportFilters, reportFilterQuery } from '../lib/reports'
 import { useLatestRequest } from '../lib/useLatestRequest'
 import SeverityBadge from '../components/SeverityBadge.vue'
 import ReportGallery from '../components/ReportGallery.vue'
+import DeleteReportDialog from '../components/DeleteReportDialog.vue'
 
 const route = useRoute()
+const router = useRouter()
 const backLink = computed(() => ({ path: '/reports', query: reportFilterQuery(readReportFilters(route.query)) }))
 const { data: report, loading, error, notFound, run, cancel } = useLatestRequest<Report>()
 
@@ -33,6 +35,7 @@ onBeforeUnmount(cancel)
         <div class="col-12 col-lg-4"><section class="card border-0 shadow-sm p-3 p-md-4 h-100" aria-labelledby="report-info-heading">
           <h2 id="report-info-heading" class="h5 fw-bold mb-4">回報內容</h2>
           <dl class="mb-0"><dt>工地名稱</dt><dd>{{ report.site_name }}</dd><dt>問題類型</dt><dd>{{ report.issue_type }}</dd><dt>嚴重度</dt><dd><SeverityBadge :severity="report.severity" /></dd><dt>問題描述</dt><dd class="description mb-0">{{ report.description }}</dd></dl>
+          <DeleteReportDialog :key="report.id" :report-id="report.id" @deleted="router.push(backLink)" />
         </section></div>
         <div class="col-12 col-lg-8"><div class="card border-0 shadow-sm p-3 p-md-4"><ReportGallery :key="report.id" :images="report.images" /></div></div>
       </div>

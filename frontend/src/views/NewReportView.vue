@@ -162,6 +162,10 @@ async function submitReport() {
           }
         }
         errorMessage.value = '資料尚未送出成功，請檢查下方欄位。'
+      } else if (error.response?.status === 429) {
+        errorMessage.value = '每個來源 IP 每分鐘最多新增嘗試 10 次，請稍後再試；已填資料與照片仍保留。'
+      } else if (error.response?.status === 409) {
+        errorMessage.value = '照片儲存忙碌中，請稍後再試；已填資料與照片仍保留。'
       } else if (!error.response) {
         errorMessage.value = '網路連線失敗，尚未確認是否送出成功。請確認連線與紀錄後再重試。'
       } else {
