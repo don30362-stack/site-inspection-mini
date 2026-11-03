@@ -431,6 +431,34 @@
 - 新增一個最小測試，僅將測試 app 的 cache.default 設為 file，path／lock_path 指向自行建立的 UUID 隔離目錄。實際取得永久鎖、確認帶前綴鍵的檔案與 owner，再透過 Artisan 執行原指令，驗證仍無法取得鎖；執行修正後指令後可重新取得鎖，無關測試快取仍保留，finally 只清理該隔離目錄。
 - 相關測試（新解除鎖測試＋ReportPhotoQuotaTest）**8 tests／55 assertions 全通過**；全專案 Pint 與 `git diff --check` 通過。未執行正式 cache:forget／cache:clear，未操作實際使用者快取、照片或資料庫；ReportPhotoQuota、Controller、DeleteReport、Migration 與限流程式皆未修改。未 Commit／Push。
 
+## 階段 A：Docker 執行環境
+
+**完成日期：**2026-11-03（Asia/Taipei）。依使用者最後補充，本階段只完成 Docker，GitHub Actions 由使用者自行建立；沒有新增或修改 `.github/workflows/`，未 Commit／Push、未連線 AWS／Lightsail，未修改業務程式、Migration 或套件。
+
+### 檔案與執行設定
+- 新增根目錄 `Dockerfile`、`compose.yaml`、`.dockerignore`，以及 `docker/.env.example`、`entrypoint.sh`、`php.ini`、`fpm.conf`、`nginx.conf`、`fastcgi.conf`。README 局部新增 Docker 首次建置、私人金鑰／雜湊設定、Migration、重建與持久化說明。
+- 多階段建置：PHP 8.4 FPM／Composer production dependencies，Node.js 24 建置 Vue，Nginx 提供靜態檔。官方基底 Image 固定本次實際建置 digest；未在執行環境增加 Node、Composer、資料庫或 Redis 服務。
+- Compose 僅 Nginx、PHP 兩個服務，只有 `127.0.0.1:18082:80` 對外；PHP 9000 僅容器網路。預設專案名稱 site-inspection-mini，SQLite／Storage（含 private 備份及 file cache）／public 照片使用三個 project-scoped named volumes；Nginx 僅唯讀掛載 public 照片。
+- 啟動腳本只在 SQLite 檔不存在時建立，設定 www-data 權限，不自動 migrate 或匯入本機資料。APP_KEY／APP_URL 必填，private env 在執行時注入；PHP production/debug、SQLite 路徑及持久 file cache 由 Compose 固定。
+- PHP upload 20M、POST 120M、max_file_uploads 20、Nginx 120m；Nginx 路由支援 SPA fallback、API、照片與檔案 404。移除客戶端 forwarding 標頭、保留實際 REMOTE_ADDR，Laravel 不盲目信任外部代理。
+- 初次建置發現主機 bootstrap/cache 的 dev provider cache 被納入 context，造成 production 無 Pail 的啟動失敗；僅修正 `.dockerignore` 明確排除該 cache，未刪主機檔案。後續兩個 Image 均成功；環境檔、SQLite、照片、金鑰與測試資料排除於 context，runtime Image 稽核確認沒有 `.env`、本機 SQLite、測試、dev Pail 或主機 config cache，Image Config.Env 未含 APP_KEY／管理雜湊。
+
+### 實際驗證
+- 本機既有 Docker Engine **29.8.2**、Compose **v5.5.1** 可用，未安裝或修改系統。容器實際為 **PHP 8.4.27／Node.js 24.22.2（建置階段）／Nginx 1.28.0**。兩個 target 建置、production Composer platform requirements、`nginx -t`、Compose config 檢查均通過。
+- Laravel 全部 **143 tests／736 assertions**、Pint 通過；前端 **32 tests**、Type Check 通過，Docker 內 npm ci／Vue production Build 通過。既有 HEIC 大型 chunk 警告保留。`git diff --check` 通過。
+- 使用獨立專案 **site-inspection-mini-qa-20261103**、新 SQLite／Storage／photos volumes 與一次性測試環境設定。只對此空資料庫執行 migrate --force，全部 Migration 成功；未操作原本 SQLite 或私人設定。
+- 真實 HTTP 經 Nginx／FPM 建立單張及五張混合 JPEG／PNG／GIF／WebP；列表最新優先、三條件 AND 篩選、單筆資料、images 數量／順序／照片實體 SHA-256 及 URL 200 正確。錯誤密碼刪除回 403，正確密碼回 200；被刪紀錄五個照片 URL 404，其他紀錄照片仍 200。
+- 額外上傳 **五張各 20 MiB** 的真實 PNG 內容（尾端補齊邊界大小），整筆 **100 MiB** 經 Nginx／PHP 回 201、五個關聯正確，確認請求大小設定足夠；不將此視為真實手機記憶體壓力驗收。
+- 兩次 `up -d --force-recreate --wait` 後紀錄與照片保留；第二次仍有 **2 筆／6 張**（含上述 100 MiB），private 測試備份內容與 file cache marker 正確。Nginx 使用者可讀 public 圖片，沒有 backend 程式碼或 private 掛載；private 測試備份無法從 /storage 讀取。
+- HTTP 確認 `/`、列表、新增、詳細與未知網址重新整理都取得 SPA，API 不存在紀錄／未知 API、缺失照片／assets、`.env`、PHP 路徑均 404。瀏覽器實際開啟 Docker Vue 首頁導向新增、導航列表取得 2 筆真實 API 資料、詳細頁重新整理後照片仍載入；未知頁顯示全站 404。截圖保留於忽略目錄 `backend/storage/framework/testing/docker-20261103/docker-detail.png`。
+- 使用不同偽造 X-Forwarded-For／Forwarded 連續送出非法 POST，前 10 次 422、第 11 次 429，未繞過來源額度；未改業務限流設定。服務 log 未見未解釋的 Laravel 例外。
+- 原本 **13 個 public 檔案雜湊未變**，原 SQLite 大小／修改時間未變，原 `.env` 雜湊未變。Home Fitness 三個容器的 ID／啟動時間與測試前相同，沒有重建／停止或變更其資料。
+
+### 保留與限制
+- 測試結束只移除本次 QA 容器與網路，保留專屬 **site-inspection-mini-qa-20261103_sqlite／_storage／_photos** 三個 Volume、建置 Image 及忽略的測試證據／私人 QA 設定；未執行 prune 或 down -v。正式預設專案的 Volume 尚未建立。
+- 尚未測試真實手機連線 Docker、雲端 Linux 主機、外部反向代理／HTTPS／來源 IP 鏈、GHCR 或 SSH 部署；此次 loopback HTTP 結果不能取代上述驗收。原有手機拖曳／燈箱／刪除的待驗收項目仍保留。
+- GitHub Actions Workflow／遠端 CI 執行由使用者處理，本次未建立亦未宣稱通過。下一階段仍需準備 Registry 權限與 Image 命名、部署主機與 SSH known_hosts／金鑰、正式 APP_KEY／管理雜湊、網域／TLS／可信代理及資料備份策略。
+
 ## 下一步
 
-由使用者設定本機管理密碼並完成新刪除操作的實機驗收；先前新增的照片拖曳／燈箱待實機項目仍保留。README 留待 Docker 與 CI/CD 完成後再依指示統一整理；未自行開始上述工作或 Commit／Push。
+使用者建立 GitHub Actions，確認 CI 後再另行授權 GHCR／SSH 部署；本次不推送 Image 或連線雲端。正式管理密碼與先前手機拖曳／燈箱／刪除實機驗收仍由使用者確認。

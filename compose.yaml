@@ -1,0 +1,52 @@
+name: site-inspection-mini
+
+services:
+  php:
+    image: ${COMPOSE_PROJECT_NAME:-site-inspection-mini}-php:local
+    build:
+      context: .
+      target: php
+    env_file:
+      - path: ${SITE_ENV_FILE:-./docker/.env}
+        required: false
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DB_CONNECTION: sqlite
+      DB_DATABASE: /var/lib/site-inspection/database.sqlite
+      DB_URL: ""
+      CACHE_STORE: file
+      RATE_LIMITER_STORE: file
+      SESSION_DRIVER: file
+      QUEUE_CONNECTION: sync
+      LOG_CHANNEL: stderr
+      TRUSTED_PROXIES: ""
+    volumes:
+      - sqlite:/var/lib/site-inspection
+      - storage:/var/www/backend/storage
+      - photos:/var/www/backend/storage/app/public
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1', 9000) ? 0 : 1);"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  nginx:
+    image: ${COMPOSE_PROJECT_NAME:-site-inspection-mini}-nginx:local
+    build:
+      context: .
+      target: nginx
+    depends_on:
+      php:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18082:80"
+    volumes:
+      - photos:/var/www/photos:ro
+    restart: unless-stopped
+
+volumes:
+  sqlite:
+  storage:
+  photos:

@@ -164,6 +164,36 @@ JPEG、PNG、GIF、WebP 直接保存至 public disk。**API 本身仍只接受�
 
 桌面 Chromium 已用 libheif 官方真實 HEIC／HEIF 容器範例驗證自動轉出 1280×854 JPEG、預覽及 API 保存；多影像容器使用解碼器選出的主影像。另一份獨立的未壓縮 `unci` HEIF 樣本不受此解碼器支援，會顯示中文錯誤而不送出。**尚未在真實 iPhone Safari 或 Android 手機瀏覽器測試**，不保證所有 HEIF 編碼、手機方向／色彩或大尺寸照片皆相容；不要求手動轉檔作為產品操作步驟。[libheif 官方說明](https://github.com/strukturag/libheif)列有其解碼器依賴；[PHP 上傳設定](https://www.php.net/manual/en/ini.core.php)說明檔案與 POST 大小限制。
 
+## Docker 執行
+
+需求：可執行 Linux containers 的 Docker Engine 與 Docker Compose（支援 `env_file.required`，Compose 2.24 以上）。在專案根目錄操作；不必先安裝本機 PHP／Node.js。
+
+```powershell
+if (-not (Test-Path docker/.env)) { Copy-Item docker/.env.example docker/.env }
+docker compose build
+docker compose run --rm --no-deps --entrypoint php php artisan key:generate --show
+```
+
+將最後一個指令輸出的金鑰填入私人的 `docker/.env` 的 `APP_KEY`，並保留它供後續重建使用。`APP_URL` 預設為 `http://127.0.0.1:18082`；未設定 APP_KEY／APP_URL 時服務拒絕啟動。不要覆蓋已有的設定或複製本機 `backend/.env`。若需刪除功能，執行以下指令產生管理密碼雜湊，將輸出以單引號包住填入 `ADMIN_REPORT_PASSWORD_HASH`；未設定時刪除停用。
+
+```powershell
+docker compose run --rm --no-deps --entrypoint php php artisan reports:admin-password-hash
+docker compose up -d
+docker compose exec --user www-data php php artisan migrate --force
+```
+
+開啟 `http://127.0.0.1:18082`。Migration 需明確執行，不會在每次啟動時自動套用；首次 SQLite 檔案由啟動腳本建立，不會匯入或覆蓋原本本機資料。
+
+- 只有 Nginx、PHP 8.4 FPM 兩個服務；Node.js 24 僅用於建置 Vue，正式環境由 Nginx 提供靜態檔。官方基底 Image 固定 digest，相依套件沿用 lock 檔。
+- 僅對外綁定 **127.0.0.1:18082**；PHP-FPM 不公開連接埠。Nginx 處理 SPA 重新整理、`/api` 與 `/storage`；照片直接讀取唯讀 Volume，不需另外執行 `storage:link`。
+- 預設 Compose 專案名稱為 `site-inspection-mini`，SQLite、Laravel Storage（含 private 刪除備份、file cache）及 public 照片分別使用三個專屬 named volumes。Nginx 只能掛載 public 照片；PHP 啟動時設定資料目錄權限。不要刪除這些 Volume，亦不要把其他專案的 Volume 掛進來。
+- PHP 單檔 20M、POST 120M、最多 20 個上傳檔，Nginx 請求上限 120m；業務限制仍為每筆 1～5 張、每張 20 MiB。照片總容量可在 `docker/.env` 以 `REPORT_PHOTO_STORAGE_LIMIT_BYTES` 調整，預設 2 GiB。
+- `.dockerignore` 排除私人環境檔、金鑰、本機 SQLite、照片、cache 與測試資料；金鑰／管理雜湊只在容器執行時注入，不放進 Image。不要提交 `docker/.env`。
+
+程式更新後使用 `docker compose up -d --build`，需要時再執行上述 migrate。`docker compose up -d --force-recreate` 或 `docker compose down` 後重新啟動會保留 named volumes；後者只停止並移除本專案容器與網路。更換環境設定後需重新建立容器。可用 `SITE_ENV_FILE` 指定其他私人環境檔，並以 `docker compose -p <獨立名稱>` 隔離測試資料；同時執行時仍須避免占用同一個 18082 埠。
+
+這是單機、loopback HTTP 的執行設定，尚未包含公開 HTTPS 或雲端部署。Nginx 不採信客戶端提供的 forwarding 標頭，Laravel 預設不信任其他代理；未來加入外部反向代理時，需另行確認可信代理及真實來源 IP，不能直接信任任意 X-Forwarded-For。
+
 ## 基本檢查
 
 後端（`backend/`）：
