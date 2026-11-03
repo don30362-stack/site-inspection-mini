@@ -476,6 +476,26 @@
 - 依使用者提供的伺服器現況，Home Fitness 已占用主機 80／443，直接在同機啟動本設定會有埠衝突，正式啟用前須另行確認入口安排。Site Inspection 現有 Nginx 清除轉送 IP 標頭，因此加入 Caddy 不代表已完成真實 IP／HTTPS 的後端信任設定；此階段未擴大修改。
 - 未連線 Lightsail、未執行 Docker Up／Down／Restart，未修改 Home Fitness、GitHub Actions、業務程式或其他 Docker 設定；未新增 Certbot／其他代理服務，未 Commit／Push。
 
+## GitHub Actions：正式部署 Job
+
+**完成日期：**2026-11-03（Asia/Taipei）。依使用者提供的新環境（13.210.231.8、ubuntu、/srv/site-inspection-mini）新增 `.github/workflows/ci.yml` 的 deploy Job；既有 backend／frontend／publish Jobs、測試與 Image 建置流程不變。
+
+- deploy 僅接受 main push，needs publish 成功；固定 production concurrency group、cancel-in-progress=false，遠端另以 flock 保護部署寫入。Runner 用既有兩項 SSH Secrets 建立暫存私鑰／known_hosts（目錄 700、檔案 600），強制 Host Key 驗證、BatchMode／IdentitiesOnly，不執行 keyscan、不輸出金鑰，結束清理 Runner 暫存憑證。
+- SCP 僅同步當次 Repository 的 Compose／Caddyfile 到獨立暫存目錄。遠端先確認既有 app.env／Compose／Caddyfile，驗證候選 Compose 與 Caddy 設定、拉取本次 github.sha 的 PHP／Nginx Images，再寫回兩份設定。Caddyfile 原 inode 保留，避免 bind mount 仍讀到舊檔；不覆寫 app.env、不建立 APP_KEY、不刪除或重建資料／憑證 Volume。
+- 遠端以固定 site-inspection-mini 專案及 SITE_IMAGE_TAG=github.sha 執行 up -d --no-build --wait，再以 www-data 非互動 migrate --force，驗證並 reload Caddy。最後由 Runner 以驗證 TLS 的 HTTPS GET 確認 /up、/api/reports 都為 200；只重試讀取，不重試資料異動，不將 API 內容寫入部署日誌。任一步失敗即讓 Job 失敗，未加入自動資料庫回滾。
+- 本機 YAML parser 通過，程式化核對既有三個 Jobs／triggers／permissions 完全不變，deploy 依賴／main push guard／concurrency／SSH 設定正確；兩個 Runner shell 區塊與遠端 heredoc 共三份 Bash -n 檢查通過，git diff --check 通過。驗證工具保留於 Git 忽略的 backend/storage/framework/testing/ci-deploy-20261103/，未安裝套件。
+- 未實際執行 GitHub Workflow、SSH／SCP、遠端 Compose／Migration、Caddy reload 或 HTTPS 請求；未連線 Lightsail、修改 Secrets／Home Fitness／Dockerfile／業務程式，未 Commit／Push。伺服器使用者的目錄／Docker 權限、GHCR pull 權限（公開 Images 或既有登入）、Compose --wait 支援、外部網路與既有專案／Volume 名稱、Host Key 匹配及實際部署／migration／HTTPS 結果仍待首次受控執行確認。
+- 新環境獨立使用 Caddy 且正式站正常為使用者回報；前段「與 Home Fitness 共用舊主機 80／443」屬歷史環境限制，不代表新主機現況。本次未補做來源 IP／HTTPS 後端信任設定。
+
+## Deploy Job：root-owned 正式檔案權限修正
+
+**完成日期：**2026-11-03（Asia/Taipei）。僅修改 `.github/workflows/ci.yml` 與本紀錄，保留既有未提交工作。
+
+- SCP 暫存目錄改為 `/home/ubuntu/.site-inspection-deploy-<run_id>-<attempt>`；上傳前以 `sudo -n true` 檢查非互動 sudo，正式腳本以 `sudo -n bash -s --` 執行。sudo 不可用立即失敗、不要求密碼；flock／正式設定更新／Compose／Migration／Caddy reload 在 root 腳本內，容器 Migration 仍指定 www-data。
+- 遠端清理 trap 提前至 cd／flock 前，正常完成或部署失敗皆清除本次兩個暫存檔及目錄。Runner EXIT trap 另以 ubuntu 執行限定路徑的清理，涵蓋 SCP／sudo 失敗，並清除 Runner 私鑰；保留原部署失敗退出碼，若部署成功但清理失敗則回報失敗。連線完全中斷時只能回報清理失敗，不能保證遠端暫存已移除；未使用遞迴刪除、chmod 777 或變更 docker 群組。
+- YAML 解析、backend／frontend／publish Jobs 與既有 triggers／permissions 不變比對、main push／needs publish／互斥及資料保護檢查通過；兩份 Runner shell 與遠端腳本共 3 份 Bash 語法檢查通過。另以 mock ssh／檔案操作驗證 4 種清理退出碼情境（正常、原部署失敗、僅清理失敗、兩者失敗），均通過；git diff --check 通過。
+- 保留 Host Key 驗證、SHA Tag、Caddyfile 原 inode、Migration、HTTPS 檢查與全部正式資料保護。本次未執行實際 SSH／sudo／Docker 或連線 Lightsail，伺服器 sudo 權限、root 的 GHCR 存取與首次部署結果仍待遠端確認；未 Commit／Push。
+
 ## 下一步
 
-使用者建立 GitHub Actions，確認 CI 後再另行授權 GHCR／SSH 部署；本次不推送 Image 或連線雲端。正式管理密碼與先前手機拖曳／燈箱／刪除實機驗收仍由使用者確認。
+由使用者確認並提交／Push Workflow，觀察首次 main 部署與正式 HTTPS 驗收；本次不觸發遠端工作。先前手機拖曳／燈箱／刪除實機驗收項目仍保留。

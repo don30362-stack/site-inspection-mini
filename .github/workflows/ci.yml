@@ -98,3 +98,94 @@ jobs:
           tags: |
             ghcr.io/don30362-stack/site-inspection-mini-nginx:${{ github.sha }}
             ghcr.io/don30362-stack/site-inspection-mini-nginx:latest
+
+  deploy:
+    name: Deploy to Lightsail
+    runs-on: ubuntu-24.04
+    needs: [publish]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 20
+    concurrency:
+      group: site-inspection-mini-production
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Sync configuration and deploy published images
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.LIGHTSAIL_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.LIGHTSAIL_SSH_KNOWN_HOSTS }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          umask 077
+          ssh_dir=$(mktemp -d "$RUNNER_TEMP/site-inspection-ssh.XXXXXXXX")
+          trap 'rm -f "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"; rmdir "$ssh_dir"' EXIT
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$ssh_dir/id_ed25519"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          chmod 700 "$ssh_dir"
+          chmod 600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          unset SSH_PRIVATE_KEY SSH_KNOWN_HOSTS
+          ssh_options=(-i "$ssh_dir/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes
+            -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_dir/known_hosts"
+            -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
+          target=ubuntu@13.210.231.8
+          staging="/home/ubuntu/.site-inspection-deploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            local status=$?
+            if ! ssh "${ssh_options[@]}" "$target" \
+              "rm -f '$staging/compose.production.yaml' '$staging/Caddyfile' && if [ -d '$staging' ]; then rmdir '$staging'; fi"; then
+              echo 'Failed to clean the remote deployment staging directory.' >&2
+              if [ "$status" -eq 0 ]; then status=1; fi
+            fi
+            rm -f "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+            rmdir "$ssh_dir"
+            exit "$status"
+          }
+          trap cleanup EXIT
+          ssh "${ssh_options[@]}" "$target" "sudo -n true && (umask 077; mkdir '$staging')"
+          scp "${ssh_options[@]}" deploy/compose.production.yaml deploy/Caddyfile "$target:$staging/"
+          ssh "${ssh_options[@]}" "$target" "sudo -n bash -s -- '$DEPLOY_SHA' '$staging'" <<'REMOTE'
+          set -euo pipefail
+          export SITE_IMAGE_TAG="$1"
+          staging="$2"
+          trap 'rm -f "$staging/compose.production.yaml" "$staging/Caddyfile"; rmdir "$staging"' EXIT
+          cd /srv/site-inspection-mini
+          # Serialize remote mutations too, including a prior disconnected SSH session.
+          exec 9>.deploy.lock
+          flock -w 600 9
+          test -f app.env
+          test -f compose.production.yaml
+          test -f Caddyfile
+          compose=(docker compose --project-name site-inspection-mini -f compose.production.yaml)
+          candidate=(docker compose --project-name site-inspection-mini --project-directory "$PWD"
+            -f "$staging/compose.production.yaml")
+          "${candidate[@]}" config --quiet
+          "${compose[@]}" exec -T caddy caddy adapt --config - --adapter caddyfile --validate \
+            < "$staging/Caddyfile" > /dev/null
+          "${candidate[@]}" pull php nginx
+          # Write in place: replacing the Caddyfile inode would leave its bind mount stale.
+          cat "$staging/compose.production.yaml" > compose.production.yaml
+          cat "$staging/Caddyfile" > Caddyfile
+          "${compose[@]}" config --quiet
+          "${compose[@]}" up -d --no-build --wait --wait-timeout 180
+          "${compose[@]}" exec -T --user www-data php php artisan migrate --force --no-interaction
+          "${compose[@]}" exec -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+          "${compose[@]}" exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+          REMOTE
+
+      - name: Verify public HTTPS endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in /up /api/reports; do
+            status=$(curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
+              --retry 5 --retry-delay 3 --retry-all-errors --output /dev/null --write-out '%{http_code}' \
+              "https://site-inspection-mini.ddnsfree.com$path")
+            test "$status" = 200
+          done
