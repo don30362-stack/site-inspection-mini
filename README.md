@@ -70,6 +70,7 @@ npm run dev
 
 - [架構與設計](docs/architecture.md)：資料模型、照片流程、技術限制與 AI 使用說明。
 - [API 規格](docs/api.md)：欄位、篩選、回應與錯誤狀態。
+- [自動化測試](docs/testing.md)：查看前後端的測試案例與覆蓋範圍。
 - [開發指南](docs/development.md)：安裝、Docker 本機執行、測試與手機連線。
 - [部署與 CI/CD](docs/deployment.md)：正式環境、GitHub Actions、更新與回復注意事項。
 - [管理與維運](docs/operations.md)：刪除密碼、容量、代理來源與故障排查。

@@ -1,5 +1,6 @@
 > 本文件完整保存搬移前的開發紀錄。各段日期、檔名、環境與待辦為當時狀態，不代表目前狀態；文內程式碼路徑以專案根目錄為準。
 > 最新摘要見[驗證現況](../PROJECT_STATUS.md)，操作方式見[開發](../development.md)、[部署](../deployment.md)與[維運](../operations.md)。原根目錄 PROJECT_STATUS.md 已移至此處，原 backend/ADMINISTRATION.md 已整併至維運文件。
+> 2026-11-04 補記：使用者已確認照片拖曳排序、照片燈箱放大與管理密碼刪除在真正的 iPhone 實測全部通過。下文較早的 iPhone 待驗收描述為當時紀錄，已由此結果更新；Android、弱網、低記憶體等未驗證限制仍保留。
 
 # Site Inspection Mini｜開發進度
 
