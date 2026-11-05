@@ -31,11 +31,6 @@ services:
 
   nginx:
     image: ghcr.io/don30362-stack/site-inspection-mini-nginx:${SITE_IMAGE_TAG:-latest}
-    networks:
-      default: {}
-      inspection_ingress:
-        aliases:
-          - site-inspection-upstream
     depends_on:
       php:
         condition: service_healthy
@@ -56,8 +51,6 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    networks:
-      default: {}
     restart: unless-stopped
 
 volumes:
@@ -66,8 +59,3 @@ volumes:
   photos:
   caddy_data:
   caddy_config:
-
-networks:
-  inspection_ingress:
-    external: true
-    name: site-inspection-ingress

@@ -14,7 +14,7 @@
 
 Caddy 使用官方 `caddy:2` 並發布 TCP 80／443，透過 default 網路代理 `nginx:80`。Nginx／PHP 使用 GHCR Images，只有 Nginx 額外保留 `127.0.0.1:18082`。PHP 不發布連接埠。
 
-Nginx 另保留 external `site-inspection-ingress`，別名 `site-inspection-upstream`；PHP／Caddy 不加入此外部網路。即使目前由 Caddy 入口提供 HTTPS，Compose 啟動前仍須已有這個外部網路，不能自行移除它。
+Caddy、Nginx 與 PHP 使用 Compose 預設網路互相通訊。Caddy 透過 nginx:80 轉送請求，不需要額外的外部 Docker 網路。
 
 ## 持久資料與前置條件
 
