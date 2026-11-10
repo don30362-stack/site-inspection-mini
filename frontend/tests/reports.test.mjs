@@ -7,11 +7,11 @@ test('filters preserve exact API values and omit all-options without forwarding 
   const filters = readReportFilters({ site_name: '七期住宅 A 棟', issue_type: '水電', severity: 'high', returnTo: 'https://example.invalid/' })
   assert.deepEqual(reportFilterQuery(filters), { site_name: '七期住宅 A 棟', issue_type: '水電', severity: 'high' })
   assert.deepEqual(reportFilterQuery(readReportFilters({})), {})
-  assert.deepEqual(readReportFilters({ site_name: ['a', 'b'], severity: null }), { site_name: '', issue_type: '', severity: '' })
+  assert.deepEqual(readReportFilters({ site_name: ['a', 'b'], severity: null, status: ['pending'] }), { site_name: '', issue_type: '', severity: '', status: '' })
 })
 
 test('URL filter round-trip retains the combined criteria for detail and back navigation', () => {
-  const original = { site_name: sites[1], issue_type: '水電', severity: 'medium' }
+  const original = { site_name: sites[1], issue_type: '水電', severity: 'medium', status: '' }
   const query = new URLSearchParams(reportFilterQuery(original))
   assert.deepEqual(readReportFilters(Object.fromEntries(query)), original)
 })

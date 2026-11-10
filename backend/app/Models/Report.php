@@ -13,6 +13,10 @@ class Report extends Model
 
     public const SEVERITIES = ['low', 'medium', 'high'];
 
+    public const STATUSES = ['pending', 'in_progress', 'completed', 'reviewed'];
+
+    protected $attributes = ['status' => 'pending'];
+
     public function images(): HasMany
     {
         return $this->hasMany(ReportImage::class)->orderBy('sort_order');

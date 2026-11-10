@@ -18,7 +18,7 @@ class ReportTest extends TestCase
     public function test_final_schema_has_no_legacy_column_and_images_have_a_foreign_key(): void
     {
         $this->assertSame('sqlite', DB::connection()->getDriverName());
-        $this->assertSame(['id', 'site_name', 'issue_type', 'severity', 'description', 'created_at', 'updated_at'], Schema::getColumnListing('reports'));
+        $this->assertSame(['id', 'site_name', 'issue_type', 'severity', 'description', 'created_at', 'updated_at', 'status'], Schema::getColumnListing('reports'));
         $this->assertSame(['id', 'report_id', 'image_path', 'sort_order'], Schema::getColumnListing('report_images'));
         $columns = collect(DB::select('PRAGMA table_info(report_images)'))->keyBy('name');
         $this->assertSame(1, $columns['id']->pk);

@@ -14,6 +14,7 @@ class ReportResource extends JsonResource
             'site_name' => $this->site_name,
             'issue_type' => $this->issue_type,
             'severity' => $this->severity,
+            'status' => $this->status,
             'description' => $this->description,
             'images' => ReportImageResource::collection($this->whenLoaded('images')),
             'created_at' => $this->created_at?->toISOString(),

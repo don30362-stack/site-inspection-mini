@@ -18,12 +18,20 @@
 
 ## 資料與照片
 
-- `reports`：id、site_name、issue_type、severity、description、created_at、updated_at。
+- `reports`：id、site_name、issue_type、severity、status、description、created_at、updated_at。
 - `report_images`：id、report_id、image_path、sort_order。外鍵 cascade delete，`report_id + sort_order` 唯一。
 - 一筆 Report 有多張 ReportImage，依 sort_order 排列；最終結構沒有 `reports.image_path`。
 - 圖片以系統 UUID 命名，存於 public disk 的 `reports/`。資料庫僅保存相對路徑，API 以 APP_URL 產生圖片 URL。
 
 SQLite 保留 Laravel 骨架的預設資料表，但本專案未實作登入、會員或角色權限。容量與限流使用 file cache，不依賴 Redis。
+
+## 處理狀態
+
+新增 Migration 以非空字串欄位 `status`、預設 `pending` 擴充 reports；既有紀錄自動為 pending，保留資料與照片關聯，不修改舊 Migration。Migration 已通過隔離測試，並於私人備份後套用至本機開發 SQLite；正式資料庫尚未套用。更新程式後必須套用待執行 Migration，否則狀態更新會因缺少欄位回 500。
+
+合法值為 pending、in_progress、completed、reviewed，可自由切換。公開 PATCH 以 Form Request 驗證，Controller 僅指定 status 並保存；新增 API 拒絕自訂初始狀態。列表 status 與原三條件共同 AND 篩選，維持 20 筆分頁與時間／ID 排序；所有 ReportResource 皆回傳狀態。PATCH 有獨立的每 IP 每分鐘 10 次限流，不涉及照片容量鎖，沒有歷程、角色或審核流程。
+
+前端 `reportOptions.ts` 集中狀態型別、文字與 Bootstrap 顏色，列表共用 StatusBadge；詳細頁以 ReportStatusEditor／useReportStatus 自動儲存、停用重送、失敗還原及離頁取消。URL 狀態篩選沿用既有 Router 分頁與返回機制，未加入 Pinia。
 
 ## 前端照片流程
 
@@ -44,7 +52,7 @@ DB 與檔案系統沒有共同原子交易。程序強制終止或底層持續�
 
 ## 限制與相容性
 
-- 單機 SQLite、共用 file cache lock 的設計，尚未驗證多主機部署；列表目前不分頁。
+- 單機 SQLite、共用 file cache lock 的設計，尚未驗證多主機部署；列表採伺服器端固定 20 筆分頁，頁碼與篩選由 Vue Router URL 保存，未加入狀態管理。
 - iPhone 核心回報、原始 HEIC 轉換，以及照片拖曳排序、燈箱放大與管理密碼刪除，均已有使用者實機驗收通過；不擴大為 Android 或極端情境也已驗證。
 - `unci` HEIF 不支援；Android、HDR／色彩專項、大容量、低記憶體與弱網情境未完整驗證。
 - 正式代理鏈的真實 IP 尚待確認；不能把程式按 IP 限流的設計，等同於正式站已正確區分每位使用者。見[代理設定限制](operations.md#來源-ip-與代理)。

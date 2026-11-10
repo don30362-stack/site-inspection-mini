@@ -6,18 +6,20 @@ import type { ApiResponse, Report } from "../lib/reports";
 import {
   formatReportDate,
   readReportFilters,
-  reportFilterQuery,
+  reportListQuery,
+  readReportPage,
 } from "../lib/reports";
 import { useLatestRequest } from "../lib/useLatestRequest";
 import SeverityBadge from "../components/SeverityBadge.vue";
 import ReportGallery from "../components/ReportGallery.vue";
 import DeleteReportDialog from "../components/DeleteReportDialog.vue";
+import ReportStatusEditor from "../components/ReportStatusEditor.vue";
 
 const route = useRoute();
 const router = useRouter();
 const backLink = computed(() => ({
   path: "/reports",
-  query: reportFilterQuery(readReportFilters(route.query)),
+  query: reportListQuery(readReportFilters(route.query), readReportPage(route.query)),
 }));
 const {
   data: report,
@@ -97,6 +99,11 @@ onBeforeUnmount(cancel);
             aria-labelledby="report-info-heading"
           >
             <h2 id="report-info-heading" class="h5 fw-bold mb-4">回報內容</h2>
+            <ReportStatusEditor
+              :key="report.id"
+              :report="report"
+              @updated="report = $event"
+            />
             <dl class="mb-0">
               <dt>工地名稱</dt>
               <dd>{{ report.site_name }}</dd>
