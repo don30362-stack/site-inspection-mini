@@ -1,57 +1,30 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { http } from "../lib/http";
-import { sites, issueTypes, severities } from "../lib/reportOptions";
-import {
-  formatReportDate,
-  readReportFilters,
-  reportFilterQuery,
-} from "../lib/reports";
-import type { ApiResponse, Report, ReportFilters } from "../lib/reports";
-import { useLatestRequest } from "../lib/useLatestRequest";
+import { sites, issueTypes, severities, reportStatuses } from "../lib/reportOptions";
+import { formatReportDate } from "../lib/reports";
+import type { ReportListResponse } from "../lib/reports";
+import { useReportList } from "../lib/useReportList";
 import SeverityBadge from "../components/SeverityBadge.vue";
+import StatusBadge from "../components/StatusBadge.vue";
 
-const route = useRoute();
-const router = useRouter();
-const filters = computed(() => readReportFilters(route.query));
-const hasFilters = computed(() => Object.values(filters.value).some(Boolean));
 const {
-  data: reports,
+  reports,
+  meta,
+  pages,
+  filters,
+  hasFilters,
   loading,
   error,
   notFound,
-  run,
-  cancel,
-} = useLatestRequest<Report[]>();
-
-function loadReports() {
-  const params = reportFilterQuery(filters.value);
-  return run(
-    async (signal) =>
-      (await http.get<ApiResponse<Report[]>>("/reports", { params, signal }))
-        .data.data,
-  );
-}
-
-function setFilter(field: keyof ReportFilters, event: Event) {
-  const value = (event.target as HTMLSelectElement).value;
-  void router.replace({
-    path: "/reports",
-    query: reportFilterQuery({ ...filters.value, [field]: value }),
-  });
-}
-
-function clearFilters() {
-  void router.replace({ path: "/reports", query: {} });
-}
-
-function detailLink(id: number) {
-  return { path: `/reports/${id}`, query: reportFilterQuery(filters.value) };
-}
-
-watch(filters, loadReports, { immediate: true });
-onBeforeUnmount(cancel);
+  loadReports,
+  setFilter,
+  clearFilters,
+  setPage,
+  detailLink,
+} = useReportList(useRoute(), useRouter(), async (params, signal) =>
+  (await http.get<ReportListResponse>("/reports", { params, signal })).data,
+);
 </script>
 
 <template>
@@ -78,7 +51,7 @@ onBeforeUnmount(cancel);
               id="filter-site"
               class="form-select touch-control"
               :value="filters.site_name"
-              @change="setFilter('site_name', $event)"
+              @change="setFilter('site_name', ($event.target as HTMLSelectElement).value)"
             >
               <option value="">全部工地</option>
               <option v-for="site in sites" :key="site" :value="site">
@@ -94,7 +67,7 @@ onBeforeUnmount(cancel);
               id="filter-issue"
               class="form-select touch-control"
               :value="filters.issue_type"
-              @change="setFilter('issue_type', $event)"
+              @change="setFilter('issue_type', ($event.target as HTMLSelectElement).value)"
             >
               <option value="">全部類型</option>
               <option v-for="issue in issueTypes" :key="issue" :value="issue">
@@ -110,7 +83,7 @@ onBeforeUnmount(cancel);
               id="filter-severity"
               class="form-select touch-control"
               :value="filters.severity"
-              @change="setFilter('severity', $event)"
+              @change="setFilter('severity', ($event.target as HTMLSelectElement).value)"
             >
               <option value="">全部嚴重度</option>
               <option
@@ -122,11 +95,25 @@ onBeforeUnmount(cancel);
               </option>
             </select>
           </div>
-          <div class="col-12 col-lg-3">
+          <div class="col-6 col-md-4 col-lg-3">
+            <label for="filter-status" class="form-label fw-semibold">處理狀態</label>
+            <select
+              id="filter-status"
+              class="form-select touch-control"
+              :value="filters.status"
+              @change="setFilter('status', ($event.target as HTMLSelectElement).value)"
+            >
+              <option value="">全部狀態</option>
+              <option v-for="option in reportStatuses" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+          </div>
+          <div class="col-12 col-md-4 col-lg-3">
             <button
               type="button"
               class="btn btn-outline-secondary touch-control w-100"
-              :disabled="!hasFilters"
+              :disabled="!hasFilters && !$route.query.page"
               @click="clearFilters"
             >
               清除篩選
@@ -141,8 +128,8 @@ onBeforeUnmount(cancel);
         {{
           loading
             ? "正在取得紀錄…"
-            : reports
-              ? `共 ${reports.length} 筆紀錄`
+            : meta
+              ? `共 ${meta.total} 筆紀錄，第 ${meta.current_page} / ${meta.last_page} 頁`
               : "巡檢紀錄"
         }}
       </p>
@@ -211,7 +198,7 @@ onBeforeUnmount(cancel);
       >
     </section>
     <template v-else-if="reports">
-      <div class="d-none d-md-block card border-0 shadow-sm overflow-hidden">
+      <div class="d-none d-md-block card border-0 shadow-sm table-responsive">
         <table class="table align-middle mb-0">
           <caption class="visually-hidden">
             巡檢紀錄，依建立時間由新到舊；時間為台灣時間。
@@ -222,6 +209,7 @@ onBeforeUnmount(cancel);
               <th scope="col">工地</th>
               <th scope="col">問題類型</th>
               <th scope="col">嚴重度</th>
+              <th scope="col">處理狀態</th>
               <th scope="col">照片</th>
               <th scope="col"><span class="visually-hidden">操作</span></th>
             </tr>
@@ -246,6 +234,7 @@ onBeforeUnmount(cancel);
               </td>
               <td>{{ report.issue_type }}</td>
               <td><SeverityBadge :severity="report.severity" /></td>
+              <td><StatusBadge :status="report.status" /></td>
               <td class="text-nowrap">{{ report.images.length }} 張</td>
               <td>
                 <RouterLink
@@ -273,6 +262,7 @@ onBeforeUnmount(cancel);
             <h2 class="h6 fw-bold mb-0">{{ report.site_name }}</h2>
             <SeverityBadge :severity="report.severity" />
           </div>
+          <div class="mb-2"><StatusBadge :status="report.status" /></div>
           <p class="mb-2">
             {{ report.issue_type }}
             <span class="text-secondary"
@@ -291,6 +281,47 @@ onBeforeUnmount(cancel);
         </RouterLink>
       </div>
     </template>
+    <nav
+      v-if="meta && meta.total > 0 && !loading && !error"
+      class="mt-4"
+      aria-label="巡檢列表分頁"
+    >
+      <ul class="pagination justify-content-center mb-0">
+        <li class="page-item" :class="{ disabled: meta.current_page === 1 }">
+          <button
+            type="button"
+            class="page-link touch-control"
+            :disabled="meta.current_page === 1"
+            @click="setPage(meta.current_page - 1)"
+          >上一頁</button>
+        </li>
+        <li
+          v-for="number in pages"
+          :key="number"
+          class="page-item"
+          :class="{ active: number === meta.current_page }"
+        >
+          <button
+            type="button"
+            class="page-link touch-control"
+            :aria-label="`第 ${number} 頁`"
+            :aria-current="number === meta.current_page ? 'page' : undefined"
+            @click="setPage(number)"
+          >{{ number }}</button>
+        </li>
+        <li
+          class="page-item"
+          :class="{ disabled: meta.current_page >= meta.last_page }"
+        >
+          <button
+            type="button"
+            class="page-link touch-control"
+            :disabled="meta.current_page >= meta.last_page"
+            @click="setPage(meta.current_page + 1)"
+          >下一頁</button>
+        </li>
+      </ul>
+    </nav>
   </main>
 </template>
 
@@ -312,6 +343,7 @@ h1 {
   border-radius: 1rem;
 }
 .touch-control {
+  min-width: 44px;
   min-height: 44px;
   display: inline-flex;
   align-items: center;

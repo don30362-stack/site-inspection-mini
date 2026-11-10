@@ -32,5 +32,10 @@ class AppServiceProvider extends ServiceProvider
             ->response(fn (Request $request, array $headers) => response()->json([
                 'data' => null, 'message' => '刪除嘗試過於頻繁，請一分鐘後再試。', 'errors' => (object) [],
             ], 429, $headers)));
+        RateLimiter::for('report-status', fn (Request $request) => Limit::perMinute(10)
+            ->by('report-status:'.$request->ip())
+            ->response(fn (Request $request, array $headers) => response()->json([
+                'data' => null, 'message' => '狀態修改過於頻繁，請一分鐘後再試。', 'errors' => (object) [],
+            ], 429, $headers)));
     }
 }

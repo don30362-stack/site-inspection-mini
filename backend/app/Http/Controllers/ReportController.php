@@ -6,6 +6,7 @@ use App\Actions\DeleteReport;
 use App\Http\Requests\DeleteReportRequest;
 use App\Http\Requests\IndexReportRequest;
 use App\Http\Requests\StoreReportRequest;
+use App\Http\Requests\UpdateReportStatusRequest;
 use App\Http\Resources\ReportResource;
 use App\Models\Report;
 use App\Support\ReportPhotoQuota;
@@ -43,14 +44,24 @@ class ReportController extends Controller
     public function index(IndexReportRequest $request): JsonResponse
     {
         $query = Report::with('images');
-        foreach ($request->validated() as $field => $value) {
+        foreach ($request->safe()->only(['site_name', 'issue_type', 'severity', 'status']) as $field => $value) {
             if ($value !== null) {
                 $query->where($field, $value);
             }
         }
 
+        $reports = $query->latest()->orderByDesc('id')->paginate(20);
+
         return response()->json([
-            'data' => ReportResource::collection($query->latest()->orderByDesc('id')->get()),
+            'data' => ReportResource::collection($reports->getCollection()),
+            'meta' => [
+                'current_page' => $reports->currentPage(),
+                'per_page' => $reports->perPage(),
+                'last_page' => $reports->lastPage(),
+                'total' => $reports->total(),
+                'from' => $reports->firstItem(),
+                'to' => $reports->lastItem(),
+            ],
             'message' => '查詢成功。',
             'errors' => (object) [],
         ]);
@@ -112,6 +123,19 @@ class ReportController extends Controller
         return response()->json([
             'data' => new ReportResource($report),
             'message' => '查詢成功。',
+            'errors' => (object) [],
+        ]);
+    }
+
+    public function updateStatus(UpdateReportStatusRequest $request, Report $report): JsonResponse
+    {
+        $report->status = $request->validated('status');
+        $report->save();
+        $report->load('images');
+
+        return response()->json([
+            'data' => new ReportResource($report),
+            'message' => '處理狀態已更新。',
             'errors' => (object) [],
         ]);
     }

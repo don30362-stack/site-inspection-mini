@@ -4,6 +4,24 @@
 
 ## 測試總覽
 
+2026-11-09 階段 2～4 狀態管理：完整 PHPUnit **183 tests／1,132 assertions**、Node.js 前端 **49 tests** 全數通過；Pint、TypeScript、正式 Build、`git diff --check` 通過，保留既有 HEIC chunk 體積警告。
+
+- 新增 [ReportStatusTest.php](../backend/tests/Feature/ReportStatusTest.php) 25 個案例：新增預設 pending、6 種自訂初始值拒絕、舊資料／照片／時間保留的 Migration 與非空預設值、NULL 拒絕、四種起始狀態到各狀態的 16 組轉換（4 個執行案例）、7 種非法值、缺漏／404、只改 status 與 updated_at、照片容量鎖期間仍可更新、四條件篩選加分頁、每 IP 跨紀錄限流／到期／驗證失敗計次。
+- 新增 [reportStatus.test.mjs](../frontend/tests/reportStatus.test.mjs) 8 個案例：共用名稱／API 值／Badge 顏色、URL 往返、成功回傳資料、任意狀態轉換、相同狀態／重送略過、422／404／429／500／網路失敗還原與重試、連續更新失敗恢復最近成功值、離頁取消後忽略晚到成功／失敗。原分頁 Router 測試擴充 status 篩選、歸一、詳細／刪除返回與重載。
+- 原 ReportTest 僅更新最終 schema 的欄位預期，保留全部原有測試；階段 1 分頁邏輯未重寫。未新增測試套件，仍為既有 PHPUnit／Node 機制。未操作現有或正式資料庫；Migration 只在記憶體／既有隔離測試庫執行。
+- 本次 PHPUnit 在沙箱外依原 phpunit.xml 執行，沿用下述 Windows 可讀性限制的處理。沒有本次真實瀏覽器／手機或部署驗收結果，前端案例測 composable 與記憶體 Router，型別／Build 不代表完整 DOM 操作已驗收。
+
+以下為先前階段 1 與 2026-11-04 的歷史基準，非目前測試總數。
+
+2026-11-09 階段 1 分頁：PHPUnit **158 tests／901 assertions**、前端 **41 tests** 全數通過；Pint、TypeScript、正式 Build、`git diff --check` 通過。Build 有既有 HEIC 解碼套件大於 500 kB 的警告。
+
+- 新增 [ReportPaginationTest.php](../backend/tests/Feature/ReportPaginationTest.php) 15 個案例：0／1／20／21／41 邊界、固定 20 筆（忽略 per_page）、完整 meta、跨頁不重複與時間／ID 排序、AND 篩選後分頁、7 種非法 page、超範圍／零筆、後頁照片欄位與排序。
+- 新增 [reportPagination.test.mjs](../frontend/tests/reportPagination.test.mjs) 9 個案例：頁碼解析、窄螢幕頁碼數量、Vue Router 記憶體歷史前後頁與三種篩選歸一、URL 重載、詳細頁／刪除返回目標、非法頁碼不發無效請求、超範圍／零筆修正、刪除後重載、快速切頁忽略過期資料／meta／導頁／錯誤，以及失敗重試。
+- 前端沿用現有 `npm test`／Node.js 內建測試工具；專案未安裝 Vitest，本次未新增或執行 Vitest。Router 測試與 composable 共用正式程式，不代表 Vue DOM、手機版面或完整瀏覽器串接已實測。
+- PHPUnit 在 Windows 沙箱內因 `is_readable(vendor/autoload.php)` 錯判為 false 無法啟動；在沙箱外執行 `php vendor/bin/phpunit` 通過，仍使用既有記憶體 SQLite／fake Storage／隔離跨行程測試，沒有對正式資料執行操作。先以 `composer dump-autoload --no-scripts` 重建本機忽略的 autoload，未更新依賴。
+
+以下保留 2026-11-04 基準分類與原有覆蓋限制；上述新增案例未計入舊表格。
+
 2026-11-04 實際執行結果：後端 **143 tests**、前端 **32 tests**，全部通過，與歷史紀錄一致。
 
 | 範圍 | 測試數量 | 工作目錄 | 執行指令 |

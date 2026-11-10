@@ -26,6 +26,7 @@ class StoreReportRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'status' => ['missing'],
             'site_name' => ['required', 'string', 'max:100'],
             'issue_type' => ['required', 'string', Rule::in(Report::ISSUE_TYPES)],
             'severity' => ['required', 'string', Rule::in(Report::SEVERITIES)],

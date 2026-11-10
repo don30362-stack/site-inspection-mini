@@ -115,7 +115,7 @@ exit
 
 ## 容量與限流
 
-- POST 每來源 IP 每分鐘 10 次新增嘗試，DELETE 每分鐘 5 次，含驗證失敗；GET 不受這兩項限制。超限回 429 與 Retry-After。
+- POST 新增及 PATCH 狀態修改，各每來源 IP 每分鐘 10 次嘗試；DELETE 每分鐘 5 次，各自獨立且包含驗證失敗；GET 不受這三項限制。超限回 429 與 Retry-After。狀態修改公開，不需管理密碼。
 - 每筆 1～5 張、每張 20 MiB；PHP 20M／POST 120M／max_file_uploads 20，Nginx 120m。
 - 照片總容量預設 2 GiB；只計 DB 關聯且實際存在的 public 照片，相同路徑只計一次。不含 private 備份、孤兒檔或其他專案，因此不是整台磁碟配額。
 
