@@ -91,6 +91,12 @@ onBeforeUnmount(cancel);
           }}</time
           >（台灣時間）
         </p>
+        <p class="text-secondary mb-0">
+          最後更新時間：<time :datetime="report.updated_at || undefined">{{
+            formatReportDate(report.updated_at)
+          }}</time
+          >（台灣時間）
+        </p>
       </header>
       <div class="row g-4">
         <div class="col-12 col-lg-4">

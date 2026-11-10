@@ -148,6 +148,10 @@ class ReportStatusTest extends TestCase
                 }
             }
             $this->assertNotSame($before['updated_at'], $after['updated_at']);
+            $updatedAt = $report->fresh()->updated_at->toISOString();
+            $response->assertJsonPath('data.updated_at', $updatedAt);
+            $this->getJson('/api/reports/'.$report->id)->assertOk()
+                ->assertJsonPath('data.updated_at', $updatedAt);
             $this->assertSame('completed', $response->json('data.status'));
             $this->assertDatabaseCount('report_images', 1);
             $this->assertSame('unchanged bytes', Storage::disk('public')->get('reports/existing.jpg'));
