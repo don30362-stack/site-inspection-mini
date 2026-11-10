@@ -17,21 +17,20 @@
 | [PR CI #13](https://github.com/don30362-stack/site-inspection-mini/actions/runs/42778258487) | success：Laravel／Vue 檢查通過；映像發布與部署依 PR 條件跳過。 |
 | [main CI #14](https://github.com/don30362-stack/site-inspection-mini/actions/runs/42782086120) | 2026-11-10 16:24:42 整體 success；Laravel、Vue、Publish Docker Images、Deploy to Lightsail 全成功。 |
 
-本機目前位於 feature/report-status 的 7fc9215；查核開始時工作目錄乾淨。GitHub 比對顯示 PR head 與合併 commit 無檔案內容差異。本次只更新文件，未執行 Commit、Push、Merge、部署或資料庫操作。
-
 [部署工作](https://github.com/don30362-stack/site-inspection-mini/actions/runs/42782086120/job/129715127700)日誌確認容器健康，status Migration 於 16:24:35 執行 DONE，HTTPS 檢查步驟成功（依 Workflow 要求 /up、/api/reports 皆回 200）。這是部署流程證據；本次沒有登入正式主機獨立核對實際容器 SHA、資料庫內容或操作網站。後續核對方式見[部署文件](deployment.md)。
 
 ## 測試與驗收範圍
 
 - 2026-11-10 PR CI 日誌確認：PHPUnit **183 tests／1,132 assertions**、Node.js 前端 **49 tests** 全通過；Pint、TypeScript、正式 Build 通過。仍有 HEIC 解碼套件大於 500 kB 的體積警告。分類與證據連結見[測試文件](testing.md)。
 - 本次文件整理未重跑程式測試；只查核 GitHub 結果、程式與文件，並檢查文件連結及 git diff --check。
+- 使用者已確認本機瀏覽器驗收通過：列表分頁、篩選及返回原頁，四種狀態任意切換，以及修改後重新整理仍保留正確狀態。此為使用者驗收回報；本次新增功能在正式網站及手機尚未個別驗收，自動化測試不等於完整瀏覽器或正式環境驗收。
 - 先前使用者已回報 iPhone 核心新增、原始 HEIC 轉換、照片排序、燈箱與管理刪除通過；不包含本次新增分頁及狀態功能的正式實機驗收。
 - 先前本機 Docker 隔離驗證包括五張各 20 MiB 上傳、增刪查及重建後持久資料保留；不代表正式 Caddy 全鏈路極限上傳通過。
 - 2026-11-09 本機曾因漏套用 status Migration 回 500；已先私人備份再增量升級，核對 3 筆紀錄與 12 筆照片關聯保留，狀態測試 25 tests／231 assertions 通過；正式升級另以上述部署日誌為證。
 
 ## 仍需人工驗證
 
-1. 獨立核對正式容器 SHA、Migration 與原資料保留；以及分頁、四條件篩選、狀態更新、返回原頁的瀏覽器／手機驗收。部署日誌成功不取代操作驗收。
+1. 獨立核對正式容器 SHA、Migration 與原資料保留；本次新增的分頁、篩選、返回原頁、狀態切換及重新整理後保留，在正式網站及手機尚需個別驗收。本機瀏覽器已由使用者驗收通過，部署日誌成功不取代操作驗收。
 2. 正式代理鏈的真實 IP 與 HTTPS 後端判斷；目前代理流量可能共用限流額度，見[來源 IP 與代理](operations.md#來源-ip-與代理)。
 3. Android、弱網、低記憶體、大容量及 HDR／色彩專項；已知 unci HEIF 不支援。
 4. Caddy 憑證續期、重建保留與完整備份還原演練；網站或 CI 成功不等於上述項目通過。

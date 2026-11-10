@@ -45,12 +45,14 @@ Data Provider 每組資料各算一個 test；同一 test 的多次請求不額�
 | [reportStatus](../frontend/tests/reportStatus.test.mjs) | 8 | 狀態文字／API 值／顏色、URL、任意切換、成功回傳資料、相同狀態／重送略過、錯誤還原及離頁取消。 |
 | **合計** | **49** | |
 
-## 執行與證據界線
+## 人工驗收與證據界線
+
+使用者已確認本機瀏覽器驗收通過：列表分頁、篩選及返回原頁，四種狀態任意切換，以及修改後重新整理仍保留正確狀態。此為使用者驗收回報；本次新增功能在正式網站及手機尚未個別驗收。自動化測試不等於完整瀏覽器或正式環境驗收。
 
 指令見[開發指南](development.md#自動化檢查)。後端依 [phpunit.xml](../backend/phpunit.xml) 使用記憶體 SQLite、fake Storage 與 array cache；跨行程案例使用 UUID 隔離 SQLite／Storage／file cache，只清理自己的資料。不要用正式資料庫測試。
 
 - Laravel Feature Tests 經 HTTP Kernel，沒有經正式 Caddy／Nginx／PHP-FPM；PHP 上傳錯誤及 POST 總長度是模擬，圖片大小邊界使用實際補齊大小的 PNG。
-- 前端未掛載完整 Vue DOM；照片集合使用假的轉換與 Object URL。未驗證真實 HEIC 解碼、燈箱 DOM／手勢、完整表單送出或手機版面。
-- 真實分頁／狀態更新、照片、弱網及手機操作仍需瀏覽器／實機驗收。既有 iPhone 回報與待確認事項見[驗證現況](PROJECT_STATUS.md)。
+- 前端自動化測試未掛載完整 Vue DOM；照片集合使用假的轉換與 Object URL。這些測試不驗證真實 HEIC 解碼、燈箱 DOM／手勢、完整表單送出或手機版面。
+- 本機瀏覽器的分頁與狀態功能驗收不代表正式網站、手機、照片或弱網情境也已驗收。既有 iPhone 回報與待確認事項見[驗證現況](PROJECT_STATUS.md)。
 - Pint、型別與 Build 不算入測試案例數；Actions 部署及 HTTPS GET 成功也不等於正式功能、代理來源 IP、憑證續期或備份還原通過。
 - Windows 受限沙箱曾將 autoload.php 的 is_readable 判為 false，導致 PHPUnit 無法啟動；先前於沙箱外使用同一隔離設定通過，不能因此改用業務資料庫。
