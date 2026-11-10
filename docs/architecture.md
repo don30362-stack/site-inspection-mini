@@ -27,7 +27,7 @@ SQLite 保留 Laravel 骨架的預設資料表，但本專案未實作登入、�
 
 ## 處理狀態
 
-新增 Migration 以非空字串欄位 `status`、預設 `pending` 擴充 reports；既有紀錄自動為 pending，保留資料與照片關聯，不修改舊 Migration。Migration 已通過隔離測試，並於私人備份後套用至本機開發 SQLite；正式資料庫尚未套用。更新程式後必須套用待執行 Migration，否則狀態更新會因缺少欄位回 500。
+Migration `2026_11_09_000000_add_status_to_reports_table` 以非空字串欄位 `status`、預設 `pending` 擴充 reports；升級時既有紀錄自動為 pending，保留資料與照片關聯，不修改舊 Migration。更新程式後必須套用待執行 Migration，否則狀態更新會因缺少欄位回 500；本機已於備份後完成升級，正式部署的驗證狀態見[驗證現況](PROJECT_STATUS.md)。
 
 合法值為 pending、in_progress、completed、reviewed，可自由切換。公開 PATCH 以 Form Request 驗證，Controller 僅指定 status 並保存；新增 API 拒絕自訂初始狀態。列表 status 與原三條件共同 AND 篩選，維持 20 筆分頁與時間／ID 排序；所有 ReportResource 皆回傳狀態。PATCH 有獨立的每 IP 每分鐘 10 次限流，不涉及照片容量鎖，沒有歷程、角色或審核流程。
 
@@ -52,7 +52,7 @@ DB 與檔案系統沒有共同原子交易。程序強制終止或底層持續�
 
 ## 限制與相容性
 
-- 單機 SQLite、共用 file cache lock 的設計，尚未驗證多主機部署；列表採伺服器端固定 20 筆分頁，頁碼與篩選由 Vue Router URL 保存，未加入狀態管理。
+- 單機 SQLite、共用 file cache lock 的設計，尚未驗證多主機部署；列表採伺服器端固定 20 筆分頁，頁碼與篩選由 Vue Router URL 保存，未引入 Pinia。
 - iPhone 核心回報、原始 HEIC 轉換，以及照片拖曳排序、燈箱放大與管理密碼刪除，均已有使用者實機驗收通過；不擴大為 Android 或極端情境也已驗證。
 - `unci` HEIF 不支援；Android、HDR／色彩專項、大容量、低記憶體與弱網情境未完整驗證。
 - 正式代理鏈的真實 IP 尚待確認；不能把程式按 IP 限流的設計，等同於正式站已正確區分每位使用者。見[代理設定限制](operations.md#來源-ip-與代理)。

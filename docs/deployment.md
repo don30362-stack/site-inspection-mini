@@ -25,7 +25,7 @@ Caddy、Nginx 與 PHP 使用 Compose 預設網路互相通訊。Caddy 透過 ngi
 - `photos`：public 照片；Nginx 唯讀掛載。
 - `caddy_data`、`caddy_config`：Caddy 憑證與設定狀態。
 
-正式主機需已完成 Docker／Compose、DNS、80／443、防火牆、外部網路、app.env 與初次 Migration。APP_KEY 必須穩定，APP_URL 應為正式 HTTPS 網址；管理雜湊選填，見[管理與維運](operations.md)。不要將本機環境檔、DB 或照片包入 Image。
+正式主機需已完成 Docker／Compose、DNS、80／443、防火牆、app.env 與初次 Migration；網路由 Compose 建立，無需預建外部網路。APP_KEY 必須穩定，APP_URL 應為正式 HTTPS 網址；管理雜湊選填，見[管理與維運](operations.md)。不要將本機環境檔、DB 或照片包入 Image。
 
 `app.env` 與正式設定可以是 root-owned；部署使用者 ubuntu 需能以 `sudo -n` 執行工作。root 必須可拉取 GHCR Images（Images 公開，或已有適當登入）。不要為修正權限使用 chmod 777 或公開密鑰。
 
@@ -46,6 +46,8 @@ Pull Request → backend + frontend
 Secrets 僅使用 `LIGHTSAIL_SSH_PRIVATE_KEY`、`LIGHTSAIL_SSH_KNOWN_HOSTS`；Runner 檔案權限為 600，強制 Host Key 驗證，不以 keyscan 取代事先核對。不要輸出完整環境、SSH 私鑰或包含秘密的 Compose config。
 
 部署先檢查非互動 sudo，再 SCP 兩份設定到 ubuntu 家目錄的獨立暫存目錄。root 腳本依序驗證候選 Compose／Caddy、拉取 PHP／Nginx SHA Images、原檔寫回設定、`up -d --no-build --wait`、以 www-data 執行非互動 `migrate --force`，最後驗證並 reload Caddy。
+
+狀態功能需要 `2026_11_09_000000_add_status_to_reports_table`；日常部署沿用上述增量 Migration，將舊紀錄初始化為 pending，不清空資料。PR 合併及映像發布成功不代表部署完成；本次 Actions 結果與正式驗收界線集中記於[驗證現況](PROJECT_STATUS.md)。
 
 Caddyfile 必須原地寫入，不能以新 inode 取代被掛載的檔案。GitHub concurrency 與遠端 flock 避免部署重疊；暫存於成功／失敗時清理，但完全斷線仍可能留下暫存，需核對再處理。
 
