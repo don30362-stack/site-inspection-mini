@@ -78,6 +78,55 @@ test('URL initialization, pagination, history and filter changes preserve the co
   assert.deepEqual(calls.at(-1).params, {})
 })
 
+test('first and last page jumps preserve all filters and browser history with filtered results', async t => {
+  const filters = { site_name: 'A', issue_type: '水電', severity: 'high', status: 'in_progress' }
+  const matching = Array.from({ length: 101 }, (_, index) => ({ id: index + 1, ...filters }))
+  // Each extra row differs in exactly one criterion, so dropping any filter changes the total.
+  const excluded = Object.entries({ site_name: 'B', issue_type: '裝修', severity: 'low', status: 'reviewed' })
+    .map(([field, value], index) => ({ id: 102 + index, ...filters, [field]: value }))
+  const records = [...matching, ...excluded].sort((left, right) => right.id - left.id)
+  const fetcher = params => {
+    const filtered = records.filter(record => Object.keys(filters)
+      .every(field => !params[field] || record[field] === params[field]))
+    const page = Number(params.page || 1)
+    return { ...response(page, filtered.length), data: filtered.slice((page - 1) * 20, page * 20) }
+  }
+  const url = `/reports?${new URLSearchParams({ ...filters, page: '3' })}`
+  const { list, router, calls } = await setup(t, url, fetcher)
+  function assertPage(page, ids) {
+    const query = { ...filters, ...(page > 1 ? { page: String(page) } : {}) }
+    assert.deepEqual(router.currentRoute.value.query, query)
+    assert.deepEqual(calls.at(-1).params, query)
+    assert.equal(list.meta.value.current_page, page)
+    assert.equal(list.meta.value.total, 101)
+    assert.equal(list.meta.value.last_page, 6)
+    assert.deepEqual(list.reports.value.map(record => record.id), ids)
+    assert.ok(list.reports.value.every(record => Object.entries(filters)
+      .every(([field, value]) => record[field] === value)))
+  }
+  const middleIds = Array.from({ length: 20 }, (_, index) => 61 - index)
+  const firstIds = Array.from({ length: 20 }, (_, index) => 101 - index)
+  assertPage(3, middleIds)
+  await list.setPage(list.meta.value.last_page)
+  await settle()
+  assertPage(6, [1])
+  await list.setPage(1)
+  await settle()
+  assertPage(1, firstIds)
+  router.back()
+  await settle()
+  assertPage(6, [1])
+  router.back()
+  await settle()
+  assertPage(3, middleIds)
+  router.forward()
+  await settle()
+  assertPage(6, [1])
+  router.forward()
+  await settle()
+  assertPage(1, firstIds)
+})
+
 test('detail and deletion return target retain page and filters, including after URL reload', async t => {
   const { list, router } = await setup(t, '/reports?page=2&site_name=A&severity=high&status=completed')
   await router.push(list.detailLink(42))

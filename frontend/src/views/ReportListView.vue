@@ -286,7 +286,15 @@ const {
       class="mt-4"
       aria-label="巡檢列表分頁"
     >
-      <ul class="pagination justify-content-center mb-0">
+      <ul class="pagination flex-wrap justify-content-center gap-2 mb-0">
+        <li class="page-item" :class="{ disabled: meta.current_page === 1 }">
+          <button
+            type="button"
+            class="page-link touch-control"
+            :disabled="meta.current_page === 1"
+            @click="setPage(1)"
+          >第一頁</button>
+        </li>
         <li class="page-item" :class="{ disabled: meta.current_page === 1 }">
           <button
             type="button"
@@ -319,6 +327,17 @@ const {
             :disabled="meta.current_page >= meta.last_page"
             @click="setPage(meta.current_page + 1)"
           >下一頁</button>
+        </li>
+        <li
+          class="page-item"
+          :class="{ disabled: meta.current_page >= meta.last_page }"
+        >
+          <button
+            type="button"
+            class="page-link touch-control"
+            :disabled="meta.current_page >= meta.last_page"
+            @click="setPage(meta.last_page)"
+          >最後一頁</button>
         </li>
       </ul>
     </nav>
