@@ -1,6 +1,6 @@
-import { computed, onScopeDispose, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import type { RouteLocationNormalizedLoaded, Router } from 'vue-router'
-import { readReportFilters, readReportPage, reportListQuery, reportPageNumbers } from './reports.ts'
+import { normalizeReportKeyword, readReportFilters, readReportPage, reportKeywordError, reportListQuery, reportPageNumbers } from './reports.ts'
 import type { ReportFilters, ReportListResponse } from './reports.ts'
 import { useLatestRequest } from './useLatestRequest.ts'
 
@@ -17,8 +17,17 @@ export function useReportList(
   const meta = computed(() => request.data.value?.meta)
   const pages = computed(() => meta.value ? reportPageNumbers(meta.value.current_page, meta.value.last_page) : [])
   const hasFilters = computed(() => Object.values(filters.value).some(Boolean))
+  const keywordDraft = ref('')
+  const keywordComposing = ref(false)
+  const keywordQueryError = computed(() => reportKeywordError(filters.value.keyword))
+  const keywordError = computed(() => reportKeywordError(keywordDraft.value) || keywordQueryError.value)
 
   function loadReports() {
+    if (keywordQueryError.value) {
+      request.cancel()
+      request.data.value = null
+      return
+    }
     const params = query.value
     return request.run(signal => fetchReports(params, signal))
   }
@@ -28,7 +37,15 @@ export function useReportList(
   }
 
   function clearFilters() {
+    keywordDraft.value = ''
     return router.replace({ path: '/reports', query: {} })
+  }
+
+  function submitKeyword() {
+    if (keywordComposing.value) return
+    keywordDraft.value = normalizeReportKeyword(keywordDraft.value)
+    if (reportKeywordError(keywordDraft.value)) return
+    return setFilter('keyword', keywordDraft.value)
   }
 
   function setPage(value: number) {
@@ -41,8 +58,10 @@ export function useReportList(
 
   watch(() => route.query, () => {
     request.cancel()
+    keywordDraft.value = filters.value.keyword
     // Normalize before fetching; a malformed URL never reaches the API.
-    if (route.query.page !== undefined && route.query.page !== query.value.page) {
+    if ((route.query.page !== undefined && route.query.page !== query.value.page)
+      || (route.query.keyword !== undefined && route.query.keyword !== query.value.keyword)) {
       void router.replace({ path: '/reports', query: query.value })
       return
     }
@@ -58,5 +77,6 @@ export function useReportList(
   onScopeDispose(request.cancel)
 
   return { reports, meta, pages, filters, hasFilters, loadReports, setFilter, clearFilters, setPage, detailLink,
+    keywordDraft, keywordComposing, keywordError, keywordQueryError, submitKeyword,
     loading: request.loading, error: request.error, notFound: request.notFound }
 }
