@@ -31,6 +31,27 @@ export interface ReportFilters {
   issue_type: string
   severity: string
   status: string
+  keyword: string
+}
+
+export const reportKeywordLimit = 100
+
+// Match Laravel Str::trim, including its invisible characters and PCRE whitespace.
+const keywordWhitespace = /^[\u0000\u0009-\u000d\u0020\u0085\u00a0\u00ad\u034f\u061c\u115f\u1160\u1680\u17b4\u17b5\u180e\u2000-\u200f\u2028\u2029\u202f\u205f\u2060-\u2065\u206a-\u206f\u2800\u3000\u3164\ufeff\uffa0\u{1d159}\u{1d173}-\u{1d17a}\u{e0020}]$/u
+
+export function normalizeReportKeyword(value: string): string {
+  const characters = Array.from(value)
+  let start = 0
+  let end = characters.length
+  // Scan each edge once; a long whitespace run inside the keyword stays untouched.
+  while (start < end && keywordWhitespace.test(characters[start]!)) start++
+  while (end > start && keywordWhitespace.test(characters[end - 1]!)) end--
+  return characters.slice(start, end).join('')
+}
+
+export function reportKeywordError(value: string): string {
+  return Array.from(normalizeReportKeyword(value)).length > reportKeywordLimit
+    ? `描述關鍵字最多 ${reportKeywordLimit} 個字元。` : ''
 }
 
 export interface PaginationMeta {
@@ -69,11 +90,12 @@ export function readReportFilters(query: Record<string, unknown>): ReportFilters
     issue_type: typeof query.issue_type === 'string' ? query.issue_type : '',
     severity: typeof query.severity === 'string' ? query.severity : '',
     status: typeof query.status === 'string' ? query.status : '',
+    keyword: typeof query.keyword === 'string' ? normalizeReportKeyword(query.keyword) : '',
   }
 }
 
 export function reportFilterQuery(filters: ReportFilters): Record<string, string> {
-  return Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== ''))
+  return Object.fromEntries(Object.entries({ ...filters, keyword: normalizeReportKeyword(filters.keyword) }).filter(([, value]) => value !== ''))
 }
 
 const taipeiDate = new Intl.DateTimeFormat('zh-TW', {

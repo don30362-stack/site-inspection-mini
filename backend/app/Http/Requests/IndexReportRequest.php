@@ -21,6 +21,7 @@ class IndexReportRequest extends FormRequest
             'issue_type' => ['nullable', 'string', Rule::in(Report::ISSUE_TYPES)],
             'severity' => ['nullable', 'string', Rule::in(Report::SEVERITIES)],
             'status' => ['nullable', 'string', Rule::in(Report::STATUSES)],
+            'keyword' => ['nullable', 'string', 'max:100'],
         ];
     }
 }

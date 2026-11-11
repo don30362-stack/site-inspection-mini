@@ -22,6 +22,11 @@ const {
   clearFilters,
   setPage,
   detailLink,
+  keywordDraft,
+  keywordComposing,
+  keywordError,
+  keywordQueryError,
+  submitKeyword,
 } = useReportList(useRoute(), useRouter(), async (params, signal) =>
   (await http.get<ReportListResponse>("/reports", { params, signal })).data,
 );
@@ -44,6 +49,26 @@ const {
 
     <section class="card border-0 shadow-sm mb-4" aria-label="篩選巡檢紀錄">
       <div class="card-body p-3 p-md-4">
+        <form class="mb-3" @submit.prevent="submitKeyword">
+          <label for="filter-keyword" class="form-label fw-semibold">描述關鍵字</label>
+          <div class="d-flex gap-2">
+            <input
+              id="filter-keyword"
+              v-model="keywordDraft"
+              type="search"
+              class="form-control"
+              placeholder="搜尋問題描述"
+              :aria-invalid="keywordError ? 'true' : undefined"
+              aria-describedby="keyword-help keyword-error"
+              @compositionstart="keywordComposing = true"
+              @compositionend="keywordComposing = false"
+              @keydown.enter="($event.isComposing || keywordComposing) && $event.preventDefault()"
+            >
+            <button type="submit" class="btn btn-primary touch-control text-nowrap">搜尋</button>
+          </div>
+          <p id="keyword-help" class="form-text mb-0">最多 100 個字元，按搜尋或 Enter 套用。</p>
+          <p v-if="keywordError" id="keyword-error" class="text-danger small mb-0" role="alert">{{ keywordError }}</p>
+        </form>
         <div class="row g-3 align-items-end">
           <div class="col-12 col-md-4 col-lg-3">
             <label for="filter-site" class="form-label fw-semibold">工地</label>
@@ -113,7 +138,7 @@ const {
             <button
               type="button"
               class="btn btn-outline-secondary touch-control w-100"
-              :disabled="!hasFilters && !$route.query.page"
+              :disabled="!hasFilters && !$route.query.page && !keywordDraft"
               @click="clearFilters"
             >
               清除篩選
@@ -142,8 +167,11 @@ const {
         重新載入
       </button>
     </div>
+    <section v-if="keywordQueryError" class="state-panel card border-0 p-4 text-center">
+      <p class="mb-0">請縮短描述關鍵字後重新搜尋。</p>
+    </section>
     <section
-      v-if="loading"
+      v-else-if="loading"
       class="state-panel card border-0 p-5 text-center"
       role="status"
       aria-live="polite"
