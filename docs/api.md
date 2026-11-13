@@ -42,9 +42,13 @@ curl.exe -H "Accept: application/json" -F "site_name=範例工地" -F "issue_typ
 
 GET 列表接受可選參數 `site_name`、`issue_type`、`severity`、`status`。前三者規則與新增對應欄位一致，status 限下表四個儲存值；非法值或型別回 422。空條件不篩選，多條件為完全相等的 AND 查詢。
 
+另接受選填 `keyword`，僅搜尋 `description` 中包含的單一字面子字串，與四個篩選條件做 AND。沿用 Laravel `Str::trim` 去除頭尾空白與其定義的不可見字元（包含全形空白、U+200B／200C／200D／FEFF），保留內部空白，不拆詞、不做正規表示式或 Unicode 正規化。未提供、null、空字串或 trim 後為空時不套用描述條件；字串 `0` 仍會搜尋。
+
+trim 後上限為 **100 個 Unicode code points**，不是 UTF-16 長度或畫面上的字形數；超長或陣列等非字串值回 422，錯誤欄位為 `errors.keyword`。`%`、`_`、`!`、反斜線與引號皆視為字面文字；SQL 使用綁定參數及明確的 `ESCAPE '!'`。SQLite LIKE 會截斷內部 U+0000，因此關鍵字或描述含此字元時，使用綁定的 `instr(lower(description), lower(?))` 補足字面比對。大小寫沿用 SQLite 預設語意：ASCII 英文不分大小寫，非 ASCII 不提供 Unicode 大小寫折疊。
+
 列表使用 Laravel `paginate(20)`，固定每頁最多 20 筆，不支援自訂 `per_page`（傳入會忽略）。可選 `page` 必須為正整數，省略時為 1；空字串、0、負數、小數、非數字或陣列回 422，`errors.page` 提供驗證錯誤。
 
-先套用四種 AND 篩選，再以 `created_at DESC`、`id DESC` 穩定排序並分頁。例如：`GET /api/reports?site_name=範例工地&severity=high&status=pending&page=2`。`page` 不作為資料庫篩選欄位。
+先套用四種 AND 篩選及描述搜尋，再以 `created_at DESC`、`id DESC` 穩定排序並分頁。例如：`GET /api/reports?site_name=範例工地&severity=high&status=pending&keyword=護欄&page=2`。`page` 不作為資料庫篩選欄位。
 
 成功回應的 `data` 維持紀錄陣列，所有紀錄及照片欄位不變；新增 `meta`，全部由 Laravel paginator 計算。沒有符合紀錄時：
 
@@ -67,6 +71,10 @@ GET 列表接受可選參數 `site_name`、`issue_type`、`severity`、`status`�
 `total` 為篩選後總筆數；`from`／`to` 是當頁首尾紀錄的序號（不是 ID）。合法但超出總頁數的 page 仍回 200、空 `data`、請求的 `current_page`、實際 `last_page`／`total`，且 `from`／`to` 為 null。
 
 前端以 URL 保存頁碼與篩選，第一頁省略 page；變更／清除篩選回第一頁，切頁保留條件，支援重新整理與瀏覽器前後頁。詳細頁返回與刪除成功皆沿用原 URL 條件。非法 URL 頁碼先改回第一頁；超範圍依 API 的 last_page 改至最後有效頁，零筆資料回第一頁顯示空資料畫面。每次只請求一頁，不在前端切割完整資料集。
+
+描述搜尋按搜尋按鈕或 Enter 才提交，中文組字期間不提交。搜尋、其他篩選與清除沿用 `router.replace`，切頁使用 `router.push`；瀏覽器前後頁還原各歷史項目的完整條件，不保留每一次搜尋的獨立歷史。輸入草稿隨 URL 導航同步；清除篩選也清除未提交草稿。
+
+前端 keyword 使用與 Laravel 相同的頭尾 trim 集合及 code point 長度驗證，不自行截斷。空搜尋從 URL 省略；URL 中非字串 keyword（如重複參數形成的陣列）忽略並以 replace 移除。超長直連 URL 顯示欄位錯誤並停止列表請求，重新載入亦遵守；修正後才查詢。Router／Axios 負責 URL 編碼，勿手動重複編碼特殊字元。
 
 ## JSON 回應
 

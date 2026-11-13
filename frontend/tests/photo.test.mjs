@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import { detectPhotoFormat, MAX_PHOTO_BYTES, preparePhoto } from '../src/lib/photo.ts'
+import { detectPhotoFormat, MAX_PHOTO_BYTES, preparePhoto, verifyPreview } from '../src/lib/photo.ts'
 
 for (const [extension, format] of [['jpg', 'jpeg'], ['png', 'png'], ['gif', 'gif'], ['webp', 'webp']]) {
   test(`detects actual ${format} fixture content without filename or MIME`, async () => {
@@ -37,4 +37,37 @@ test('rejects an empty input before any decoder import', async () => {
 
 test('rejects an input exceeding 20 MiB before any decoder import', async () => {
   await assert.rejects(preparePhoto(new File([new Uint8Array(MAX_PHOTO_BYTES + 1)], 'large.heic')), /20 MiB/)
+})
+
+test('preview decoding failure rejects with an error and releases its object URL exactly once', async (t) => {
+  const originalImage = Object.getOwnPropertyDescriptor(globalThis, 'Image')
+  t.after(() => {
+    if (originalImage) Object.defineProperty(globalThis, 'Image', originalImage)
+    else delete globalThis.Image
+  })
+
+  const requestedUrls = []
+  Object.defineProperty(globalThis, 'Image', {
+    configurable: true,
+    value: class {
+      set src(url) {
+        requestedUrls.push(url)
+        queueMicrotask(() => this.onerror())
+      }
+    },
+  })
+  const objectUrl = 'blob:preview-decoding-failure'
+  const create = t.mock.method(URL, 'createObjectURL', () => objectUrl)
+  const revoke = t.mock.method(URL, 'revokeObjectURL', () => {})
+  const file = new Blob(['invalid image'], { type: 'image/jpeg' })
+
+  await assert.rejects(verifyPreview(file), {
+    name: 'Error',
+    message: '圖片內容無法讀取，請重新拍照或選取其他照片。',
+  })
+  assert.equal(create.mock.callCount(), 1)
+  assert.deepEqual(create.mock.calls[0].arguments, [file])
+  assert.deepEqual(requestedUrls, [objectUrl])
+  assert.equal(revoke.mock.callCount(), 1)
+  assert.deepEqual(revoke.mock.calls[0].arguments, [objectUrl])
 })

@@ -277,6 +277,18 @@ class ReportApiTest extends TestCase
         $this->assertNothingPersisted();
     }
 
+    public function test_rejects_sparse_photo_indices_without_persisting_anything(): void
+    {
+        // Pass files separately to preserve the original multipart field indices.
+        $response = $this->call('POST', '/api/reports', $this->attributes(), [], [
+            'photos' => [0 => $this->photo(), 2 => $this->photo()],
+        ]);
+
+        $this->assertSame([0, 2], array_keys($response->baseRequest->file('photos')));
+        $response->assertUnprocessable()->assertJsonValidationErrors('photos')->assertJsonPath('data', null);
+        $this->assertNothingPersisted();
+    }
+
     public function test_images_are_eager_loaded_without_n_plus_one_queries(): void
     {
         foreach (range(1, 4) as $number) {
