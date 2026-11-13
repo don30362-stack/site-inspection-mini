@@ -50,6 +50,17 @@ class ReportController extends Controller
             }
         }
 
+        $keyword = $request->validated('keyword');
+        if ($keyword !== null) {
+            if (str_contains($keyword, "\0")) {
+                // SQLite LIKE stops at NUL; instr preserves literal substring matching.
+                $query->whereRaw('instr(lower(description), lower(?)) > 0', [$keyword]);
+            } else {
+                $pattern = '%'.strtr($keyword, ['!' => '!!', '%' => '!%', '_' => '!_']).'%';
+                $query->whereRaw("(description LIKE ? ESCAPE '!' OR (instr(description, char(0)) > 0 AND instr(lower(description), lower(?)) > 0))", [$pattern, $keyword]);
+            }
+        }
+
         $reports = $query->latest()->orderByDesc('id')->paginate(20);
 
         return response()->json([

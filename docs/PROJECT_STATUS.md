@@ -1,38 +1,51 @@
 # 驗證現況與待辦
 
-更新日期：2026-11-10（台灣時間）。本文件區分程式完成、自動化檢查與正式環境驗收；歷史保留於 [archive/](archive/development-history.md)。
+更新日期：2026-11-13（台灣時間）。本文件區分整合、自動化檢查與人工驗收；歷史保留於 [archive/](archive/development-history.md)。
 
 ## 已完成功能
 
 - 手機新增巡檢，1～5 張照片、每張最多 20 MiB；照片預覽、更換、刪除、排序及 HEIC／HEIF 轉 JPEG。
-- 列表依工地、問題類型、嚴重度及狀態做 AND 篩選，Laravel 固定每頁 20 筆，以 created_at／id DESC 排序。URL 保留條件與頁碼，支援詳細頁返回、重新整理及瀏覽器前後頁。
-- 待處理、處理中、已完成、已審核四種狀態可任意切換。新增與舊資料升級時預設 pending；詳細頁自動儲存，無登入、管理密碼、主管權限或修改歷程。
+- 列表依工地、問題類型、嚴重度、狀態及描述關鍵字做 AND 篩選；描述採字面包含搜尋，trim 後最多 100 個 Unicode code points。固定每頁 20 筆，以 created_at／id DESC 排序。
+- 第一頁／最後一頁按鈕保留全部五個條件；邊界原生 disabled，分頁列可換行。搜尋／清除採 replace、切頁採 push，URL 支援重整、前後頁與詳細頁返回。
+- 待處理、處理中、已完成、已審核四種狀態可切換；詳細頁自動儲存，並以 API 完整回傳紀錄更新最後更新時間，使用台灣時區與分鐘精度。空值顯示「未提供時間」。
 - 詳細頁與照片燈箱、管理密碼刪除、容量鎖、限流、失敗清理及全站 404。欄位與限制見 [API](api.md)、[架構](architecture.md)與[維運](operations.md)。
 
-## GitHub 與部署證據
+## Codex 練習整合狀態
 
-| 項目 | 已確認結果 |
+- fetch origin 後確認 integration/codex-practice、origin/main 與原基底皆為 e9fd1d428368e6c1fdea5d19c009040b00b2cee4，起始工作目錄乾淨。
+- 已依序以 cherry-pick --no-commit 套用 3c2d05f、2d76738、0ddce87、5774d92、bdc60b5；本次依使用者明確授權收斂為一筆本機整合 Commit，訊息為 `feat: integrate codex practice improvements`。未 push、merge 或部署，也未操作正式資料。
+- 只有 PROJECT_STATUS.md 在首尾頁與搜尋套用時發生預期衝突；逐段保留功能與歷史，未整份採用 ours／theirs。列表頁與分頁測試自動合併；沒有非預期衝突。
+- 5774d92／bdc60b5 分別與 e89bef9／748f662 patch 相同，僅套用指定版本，沒有重複整合。
+- 補強既有首尾頁測試：101 筆符合五條件，另五筆各僅違反一項；驗證第 3 → 6 → 1 頁及前後頁時的 URL、API params、keyword 草稿、metadata 與實際結果。描述含內部雙空白、特殊符號及 emoji。
+- 保留照片預覽解碼失敗釋放 Object URL，以及拒絕稀疏照片索引且不持久化的兩項回歸測試；未新增套件、Migration 或部署設定。
+
+## 本次驗證
+
+- Laravel 完整測試：209 tests／1,255 assertions 通過；Pint --test 通過。
+- 前端完整測試：59 tests 通過，無失敗、跳過或取消；TypeScript 型別檢查與正式 Build 通過。
+- 整合 Code Review 已完成，未發現需修正缺陷；Review 回報後端 209 tests、前端 59 tests、型別檢查與正式 Build 通過，保留既有 HEIC chunk 警告。此為本次整合 Review 結果，不代表瀏覽器或正式環境驗收通過。
+- 收尾僅更新文件與核對 17 個檔案及暫存內容，沒有修改功能或測試程式，未重跑完整自動化檢查；以上測試數沿用本次整合實測及 Review 證據。
+- Git 暫存與 HEAD 差異格式檢查通過；無未解衝突。已核對 12 個無交集的來源檔案與原 Commit 一致，並檢查列表頁的兩組功能、補強測試、文件編碼與本機連結。
+- Build 仍有既有 HEIC chunk 大於 500 kB 警告。測試範圍與指令見[測試文件](testing.md)。
+- 後端使用 phpunit.xml 的記憶體 SQLite、fake Storage 與隔離資源；本輪未操作展示資料或正式資料，也未執行歷史 seed／cleanup 工具。
+
+## GitHub 與部署歷史證據
+
+| 項目 | 歷史結果 |
 | --- | --- |
-| [PR #1](https://github.com/don30362-stack/site-inspection-mini/pull/1) | 2026-11-10 16:22:06 合併至 main；合併 commit 為 11fbc9eb6cc83c4a75cf3fd16628d5ba9b8fe61a。 |
-| [PR CI #13](https://github.com/don30362-stack/site-inspection-mini/actions/runs/42778258487) | success：Laravel／Vue 檢查通過；映像發布與部署依 PR 條件跳過。 |
-| [main CI #14](https://github.com/don30362-stack/site-inspection-mini/actions/runs/42782086120) | 2026-11-10 16:24:42 整體 success；Laravel、Vue、Publish Docker Images、Deploy to Lightsail 全成功。 |
+| [PR #1](https://github.com/don30362-stack/site-inspection-mini/pull/1) | 2026-11-10 合併至 main，commit 11fbc9eb6cc83c4a75cf3fd16628d5ba9b8fe61a。 |
+| [PR CI #13](https://github.com/don30362-stack/site-inspection-mini/actions/runs/42778258487) | Laravel／Vue 檢查成功；PR 不發布映像或部署。 |
+| [main CI #14](https://github.com/don30362-stack/site-inspection-mini/actions/runs/42782086120) | Laravel、Vue、映像發布與 Lightsail 部署成功；status Migration 與 HTTPS 檢查成功。 |
 
-[部署工作](https://github.com/don30362-stack/site-inspection-mini/actions/runs/42782086120/job/129715127700)日誌確認容器健康，status Migration 於 16:24:35 執行 DONE，HTTPS 檢查步驟成功（依 Workflow 要求 /up、/api/reports 皆回 200）。這是部署流程證據；本次沒有登入正式主機獨立核對實際容器 SHA、資料庫內容或操作網站。後續核對方式見[部署文件](deployment.md)。
+以上沿用原文件的歷史證據，本輪未重新查核遠端 Actions 或正式容器 SHA；不能當成本次整合已上線的證據。[部署文件](deployment.md)說明核對方式。
 
-## 測試與驗收範圍
+## 人工驗收與部署前待辦
 
-- 2026-11-10 PR CI 日誌確認：PHPUnit **183 tests／1,132 assertions**、Node.js 前端 **49 tests** 全通過；Pint、TypeScript、正式 Build 通過。仍有 HEIC 解碼套件大於 500 kB 的體積警告。分類與證據連結見[測試文件](testing.md)。
-- 本次文件整理未重跑程式測試；只查核 GitHub 結果、程式與文件，並檢查文件連結及 git diff --check。
-- 使用者已確認本機瀏覽器驗收通過：列表分頁、篩選及返回原頁，四種狀態任意切換，以及修改後重新整理仍保留正確狀態。此為使用者驗收回報；本次新增功能在正式網站及手機尚未個別驗收，自動化測試不等於完整瀏覽器或正式環境驗收。
-- 先前使用者已回報 iPhone 核心新增、原始 HEIC 轉換、照片排序、燈箱與管理刪除通過；不包含本次新增分頁及狀態功能的正式實機驗收。
-- 先前本機 Docker 隔離驗證包括五張各 20 MiB 上傳、增刪查及重建後持久資料保留；不代表正式 Caddy 全鏈路極限上傳通過。
-- 2026-11-09 本機曾因漏套用 status Migration 回 500；已先私人備份再增量升級，核對 3 筆紀錄與 12 筆照片關聯保留，狀態測試 25 tests／231 assertions 通過；正式升級另以上述部署日誌為證。
+1. **瀏覽器整合驗收：待完成，依使用者決定延後。** 待桌面與手機檢查四條件＋關鍵字的首尾頁、邊界停用、換行、詳細返回、重整、前後頁、零結果與超範圍修正，以及搜尋／清除回第一頁；不宣稱已通過。
+2. **手機原生 IME、弱網競態：待完成。** 待確認中文組字不誤送、弱網快速搜尋／切頁沒有過期結果；前端測試僅涵蓋 composable／memory Router，未掛載完整 DOM。
+3. 狀態修改後核對 updated_at 與 API，跨分鐘驗證顯示；同分鐘顯示可能相同，初始建立與更新時間也可能一致。
+4. **本次整合正式部署：待完成，尚未執行。** 未來合併 main 前需另行確認部署授權：main push 會自動測試、發布 SHA 映像並部署；PR 只測試。先核對最新 main、PR CI、上一版映像與一致性備份及還原方式。Workflow 不會自動 rollback。
+5. 部署後核對實際容器 SHA、Migration、原資料與照片及完整功能；HTTP 200 不取代功能驗收。正式來源 IP／HTTPS 判斷、Caddy 憑證續期與備份還原仍需確認。
+6. Android、低記憶體、大容量、HDR／色彩與大量資料搜尋效能仍未完成專項驗證；已知 unci HEIF 不支援。未來 Laravel 升級需重新對照 keyword trim 集合。
 
-## 仍需人工驗證
-
-1. 獨立核對正式容器 SHA、Migration 與原資料保留；本次新增的分頁、篩選、返回原頁、狀態切換及重新整理後保留，在正式網站及手機尚需個別驗收。本機瀏覽器已由使用者驗收通過，部署日誌成功不取代操作驗收。
-2. 正式代理鏈的真實 IP 與 HTTPS 後端判斷；目前代理流量可能共用限流額度，見[來源 IP 與代理](operations.md#來源-ip-與代理)。
-3. Android、弱網、低記憶體、大容量及 HDR／色彩專項；已知 unci HEIF 不支援。
-4. Caddy 憑證續期、重建保留與完整備份還原演練；網站或 CI 成功不等於上述項目通過。
-
-既有開發紀錄見[完整歷史](archive/development-history.md)、[分頁](archive/pagination-stage-1-20261109.md)及[狀態管理](archive/report-status-stages-2-4-20261109.md)；本次不重寫歸檔。
+原功能各自的本機人工驗收與測試紀錄見[最後更新時間／首尾頁](archive/codex-practice-20261110.md)、[描述搜尋](archive/description-search-20261111.md)；既有開發歷史見[完整紀錄](archive/development-history.md)、[分頁](archive/pagination-stage-1-20261109.md)與[狀態管理](archive/report-status-stages-2-4-20261109.md)。原分支的驗收回報不代表本次整合已人工驗收。
